@@ -24,8 +24,8 @@ pub fn kill_app() -> AppResult<()> {
             "First pass: sent kill signal to {} processes",
             killed_first_pass
         );
-        // Wait for processes to terminate
-        thread::sleep(Duration::from_millis(1500));
+        // Wait for processes to terminate (PS script waits 4s)
+        thread::sleep(Duration::from_millis(4000));
     }
 
     // Second pass — refresh and kill any survivors
@@ -37,7 +37,7 @@ pub fn kill_app() -> AppResult<()> {
             "Second pass: sent kill signal to {} remaining processes",
             killed_second_pass
         );
-        thread::sleep(Duration::from_millis(1000));
+        thread::sleep(Duration::from_millis(2000));
     }
 
     let total_killed = killed_first_pass + killed_second_pass;
@@ -51,6 +51,7 @@ pub fn kill_app() -> AppResult<()> {
 }
 
 /// Find and kill all processes matching known QoderWork patterns.
+/// Excludes the switcher's own process to avoid killing ourselves.
 /// Returns the number of processes that were sent a kill signal.
 fn kill_matching_processes(sys: &System) -> usize {
     let mut count = 0;
@@ -62,22 +63,55 @@ fn kill_matching_processes(sys: &System) -> usize {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let name_lower = name.to_lowercase();
+        // Skip the switcher's own process
         let exe_lower = exe_str.to_lowercase();
+        if exe_lower.contains("account-switcher") || exe_lower.contains("switcher") {
+            continue;
+        }
 
+        let name_lower = name.to_lowercase();
+
+        let mut matched = false;
         for pattern in PROCESS_PATTERNS {
             let pattern_lower = pattern.to_lowercase();
             if name_lower.contains(&pattern_lower) || exe_lower.contains(&pattern_lower) {
-                log::info!(
-                    "Killing process: pid={}, name={}, exe={}",
-                    pid,
-                    name,
-                    exe_str
-                );
-                process.kill();
-                count += 1;
-                break; // Don't double-kill the same process
+                matched = true;
+                break;
             }
+        }
+
+        if matched {
+            log::info!(
+                "Killing process: pid={}, name={}, exe={}",
+                pid,
+                name,
+                exe_str
+            );
+
+            // Use taskkill on Windows for more reliable termination
+            #[cfg(target_os = "windows")]
+            {
+                let pid_u32 = pid.as_u32();
+                let result = Command::new("taskkill")
+                    .args(["/F", "/PID", &pid_u32.to_string()])
+                    .output();
+                match result {
+                    Ok(output) if output.status.success() => {
+                        log::info!("taskkill /F /PID {} succeeded", pid_u32);
+                    }
+                    _ => {
+                        log::warn!("taskkill failed for PID {}, falling back to process.kill()", pid_u32);
+                        process.kill();
+                    }
+                }
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                process.kill();
+            }
+
+            count += 1;
         }
     }
 

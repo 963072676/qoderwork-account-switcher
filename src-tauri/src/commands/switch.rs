@@ -60,7 +60,7 @@ pub async fn switch_account(
     // Step 1: Kill the app
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
     process::kill_app()?;
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(Duration::from_millis(2000));
 
     // Step 2: Clear current session
     emit_progress(&app_handle, "正在清除当前会话...", 2, total_steps);
@@ -133,7 +133,7 @@ pub async fn save_current_account(
     // Step 1: Kill the app to ensure data is flushed
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
     process::kill_app()?;
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(Duration::from_millis(2000));
 
     // Step 2: Save session data
     emit_progress(&app_handle, "正在保存账号数据...", 2, total_steps);

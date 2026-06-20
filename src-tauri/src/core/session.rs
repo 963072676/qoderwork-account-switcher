@@ -37,6 +37,10 @@ pub fn save_auth_data(paths: &AppPaths, account_id: &str) -> AppResult<()> {
     save_file_with_backup(&paths.auth_v2_dat, &profile_dir)?;
     save_file_with_backup(&paths.lockfile, &profile_dir)?;
 
+    // Save .auth-cn token files (id and user — critical for CLI authentication)
+    save_file_with_backup(&paths.auth_dir.join("id"), &profile_dir)?;
+    save_file_with_backup(&paths.auth_dir.join("user"), &profile_dir)?;
+
     // Save Partitions subdirectories
     let partitions_backup_dir = profile_dir.join("Partitions").join("main");
     fs::create_dir_all(&partitions_backup_dir).map_err(|e| {
@@ -119,6 +123,18 @@ pub fn restore_auth_data(paths: &AppPaths, account_id: &str) -> AppResult<()> {
     restore_file(&profile_dir.join("auth.dat"), &paths.auth_dat)?;
     restore_file(&profile_dir.join("auth-v2.dat"), &paths.auth_v2_dat)?;
     restore_file(&profile_dir.join("lockfile"), &paths.lockfile)?;
+
+    // Restore .auth-cn token files (id and user — critical for CLI authentication)
+    if !paths.auth_dir.exists() {
+        fs::create_dir_all(&paths.auth_dir).map_err(|e| {
+            AppError::Session(format!(
+                "Failed to create auth dir {:?}: {}",
+                paths.auth_dir, e
+            ))
+        })?;
+    }
+    restore_file(&profile_dir.join("id"), &paths.auth_dir.join("id"))?;
+    restore_file(&profile_dir.join("user"), &paths.auth_dir.join("user"))?;
 
     // Restore Partitions subdirectories
     let saved_partitions = profile_dir.join("Partitions").join("main");
