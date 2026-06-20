@@ -26,10 +26,11 @@ pub fn run() {
             commands::accounts::add_account,
             commands::accounts::delete_account,
             commands::switch::switch_account,
-            commands::switch::save_account,
-            commands::detect::detect_current,
-            commands::detect::get_app_path,
-            commands::detect::set_app_path,
+            commands::switch::save_current_account,
+            commands::detect::detect_current_account,
+            commands::detect::get_exe_path,
+            commands::detect::set_exe_path,
+            commands::detect::auto_detect_exe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

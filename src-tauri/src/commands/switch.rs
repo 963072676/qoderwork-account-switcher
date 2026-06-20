@@ -84,25 +84,51 @@ pub async fn switch_account(
     Ok(())
 }
 
-/// Save the current session for an account:
-/// 1. Kill the running app (to ensure session data is flushed)
-/// 2. Save session data
-/// 3. Relaunch the app
+/// Save the current session.
+///
+/// This detects which account is currently active (via .status.json userId),
+/// finds the matching account in state.json, and saves its session data.
+/// If no matching account is found, falls back to the "active" field in state.json.
 #[tauri::command]
-pub async fn save_account(
+pub async fn save_current_account(
     app_handle: tauri::AppHandle,
     paths: State<'_, AppPaths>,
-    id: String,
 ) -> AppResult<()> {
     let total_steps: u32 = 3;
 
-    // Validate account exists
+    // Detect current userId from .status.json
+    let current_user_id = crate::core::status::get_current_user_id(&paths);
+
+    // Find which account this userId belongs to
     let state_data = state::read_state(&paths)?;
+
+    let account_id = if let Some(ref uid) = current_user_id {
+        // Match by userId
+        state_data
+            .accounts
+            .iter()
+            .find(|a| a.user_id.as_deref() == Some(uid))
+            .map(|a| a.id.clone())
+    } else {
+        None
+    };
+
+    // Fallback to the "active" field in state
+    let account_id = account_id
+        .or_else(|| state_data.active.clone())
+        .ok_or_else(|| {
+            AppError::Session(
+                "无法确定当前账号。请先在 QoderWork CN 中登录，或切换到一个已保存的账号。"
+                    .to_string(),
+            )
+        })?;
+
+    // Validate account exists
     let _account = state_data
         .accounts
         .iter()
-        .find(|a| a.id == id)
-        .ok_or_else(|| AppError::AccountNotFound(id.clone()))?;
+        .find(|a| a.id == account_id)
+        .ok_or_else(|| AppError::AccountNotFound(account_id.clone()))?;
 
     // Step 1: Kill the app to ensure data is flushed
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
@@ -111,17 +137,18 @@ pub async fn save_account(
 
     // Step 2: Save session data
     emit_progress(&app_handle, "正在保存账号数据...", 2, total_steps);
-    session::save_auth_data(&paths, &id)?;
+    session::save_auth_data(&paths, &account_id)?;
 
     // Mark account as saved and update userId from status
     let mut state_data = state::read_state(&paths)?;
-    if let Some(account) = state_data.accounts.iter_mut().find(|a| a.id == id) {
+    if let Some(account) = state_data.accounts.iter_mut().find(|a| a.id == account_id) {
         account.saved = true;
-        // Try to detect and store the current userId
-        if let Some(user_id) = crate::core::status::get_current_user_id(&paths) {
-            account.user_id = Some(user_id);
+        // Update userId from fresh detection
+        if let Some(uid) = current_user_id {
+            account.user_id = Some(uid);
         }
     }
+    state_data.active = Some(account_id.clone());
     state::write_state(&paths, &state_data)?;
 
     // Step 3: Relaunch the app
@@ -129,7 +156,7 @@ pub async fn save_account(
     let exe_path = get_exe_path(&app_handle);
     process::launch_app(&exe_path)?;
 
-    log::info!("Successfully saved session for account {}", id);
+    log::info!("Successfully saved session for account {}", account_id);
     Ok(())
 }
 

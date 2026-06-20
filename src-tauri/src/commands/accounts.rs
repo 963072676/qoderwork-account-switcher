@@ -5,6 +5,13 @@ use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use tauri::State;
 
+/// Response payload for list_accounts, matching frontend expectations.
+#[derive(Serialize, Clone, Debug)]
+pub struct AccountListResponse {
+    pub accounts: Vec<AccountWithStatus>,
+    pub current_user_id: Option<String>,
+}
+
 /// Account with additional runtime status information.
 #[derive(Serialize, Clone, Debug)]
 pub struct AccountWithStatus {
@@ -19,7 +26,7 @@ pub struct AccountWithStatus {
 
 /// List all accounts with their current status.
 #[tauri::command]
-pub fn list_accounts(paths: State<'_, AppPaths>) -> AppResult<Vec<AccountWithStatus>> {
+pub fn list_accounts(paths: State<'_, AppPaths>) -> AppResult<AccountListResponse> {
     let state = state::read_state(&paths)?;
     let current_user_id = status::get_current_user_id(&paths);
 
@@ -43,7 +50,10 @@ pub fn list_accounts(paths: State<'_, AppPaths>) -> AppResult<Vec<AccountWithSta
         })
         .collect();
 
-    Ok(accounts_with_status)
+    Ok(AccountListResponse {
+        accounts: accounts_with_status,
+        current_user_id,
+    })
 }
 
 /// Add a new account to the state.

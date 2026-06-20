@@ -1,14 +1,14 @@
 use crate::commands::switch::STORE_FILE;
-use crate::core::paths::AppPaths;
+use crate::core::paths::{self, AppPaths};
 use crate::core::status;
 use crate::error::AppResult;
 use tauri::State;
 use tauri_plugin_store::StoreExt;
 
 /// Detect the currently logged-in account by reading .status.json.
-/// Returns the userId (UUID) if detected, or None.
+/// Called "detect_current_account" to match the frontend invoke name.
 #[tauri::command]
-pub fn detect_current(paths: State<'_, AppPaths>) -> AppResult<Option<String>> {
+pub fn detect_current_account(paths: State<'_, AppPaths>) -> AppResult<Option<String>> {
     let user_id = status::get_current_user_id(&paths);
     Ok(user_id)
 }
@@ -16,7 +16,7 @@ pub fn detect_current(paths: State<'_, AppPaths>) -> AppResult<Option<String>> {
 /// Get the configured application executable path from the store.
 /// Returns an empty string if no custom path has been set.
 #[tauri::command]
-pub fn get_app_path(app_handle: tauri::AppHandle) -> AppResult<String> {
+pub fn get_exe_path(app_handle: tauri::AppHandle) -> AppResult<String> {
     if let Ok(store) = app_handle.store(STORE_FILE) {
         if let Some(val) = store.get("app_exe_path") {
             if let Some(path_str) = val.as_str() {
@@ -30,7 +30,7 @@ pub fn get_app_path(app_handle: tauri::AppHandle) -> AppResult<String> {
 /// Set the application executable path in the store.
 /// This overrides the auto-detected path.
 #[tauri::command]
-pub fn set_app_path(
+pub fn set_exe_path(
     app_handle: tauri::AppHandle,
     path: String,
 ) -> AppResult<()> {
@@ -45,4 +45,21 @@ pub fn set_app_path(
 
     log::info!("App executable path set to: {}", path);
     Ok(())
+}
+
+/// Auto-detect the QoderWork CN executable path by scanning common install locations.
+/// Returns the detected path, or an error if not found.
+#[tauri::command]
+pub fn auto_detect_exe() -> AppResult<String> {
+    match paths::find_app_exe() {
+        Ok(path) => {
+            let path_str = path.to_string_lossy().to_string();
+            log::info!("Auto-detected app executable: {}", path_str);
+            Ok(path_str)
+        }
+        Err(e) => {
+            log::warn!("Auto-detect failed: {}", e);
+            Err(e)
+        }
+    }
 }

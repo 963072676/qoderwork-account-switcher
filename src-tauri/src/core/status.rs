@@ -31,7 +31,10 @@ pub fn get_current_user_id(paths: &AppPaths) -> Option<String> {
         }
     };
 
-    let status: StatusFile = match serde_json::from_str(&content) {
+    // Strip UTF-8 BOM if present
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+
+    let status: StatusFile = match serde_json::from_str(content) {
         Ok(s) => s,
         Err(e) => {
             log::warn!("Failed to parse status file: {}", e);

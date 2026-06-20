@@ -46,12 +46,15 @@ pub fn read_state(paths: &AppPaths) -> AppResult<State> {
         AppError::StateFile(format!("Failed to read state file {:?}: {}", state_file, e))
     })?;
 
+    // Strip UTF-8 BOM if present (PowerShell -Encoding UTF8 produces BOM)
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+
     if content.trim().is_empty() {
         log::warn!("State file is empty, returning default");
         return Ok(State::default());
     }
 
-    let state: State = serde_json::from_str(&content).map_err(|e| {
+    let state: State = serde_json::from_str(content).map_err(|e| {
         AppError::StateFile(format!("Failed to parse state file {:?}: {}", state_file, e))
     })?;
 
