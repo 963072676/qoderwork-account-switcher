@@ -132,9 +132,10 @@ fn find_app_exe_windows() -> AppResult<PathBuf> {
     let exe_name = "QoderWork CN.exe";
     let dir_name = "QoderWork CN";
 
-    // 1. Try registry-based discovery via known uninstall keys
+    // 1. Try registry-based discovery via known uninstall keys (native, no reg.exe)
     if let Some(path) = find_exe_from_registry() {
         if path.exists() {
+            log::info!("Found exe via registry: {:?}", path);
             return Ok(path);
         }
     }
@@ -145,7 +146,6 @@ fn find_app_exe_windows() -> AppResult<PathBuf> {
         if candidate.exists() {
             return Ok(candidate);
         }
-        // Some installers place it one level deeper
         let candidate = local_app_data
             .join("Programs")
             .join(dir_name)
@@ -156,12 +156,18 @@ fn find_app_exe_windows() -> AppResult<PathBuf> {
     }
 
     // 3. Check Program Files on C: and D: drives
-    for drive in &["C:", "D:"] {
+    //    Also check nested layout: "QoderWork CN/QoderWork CN/QoderWork CN.exe"
+    for drive in &["C:", "D:", "E:"] {
         for pf in &["Program Files", "Program Files (x86)"] {
-            let candidate = Path::new(drive)
-                .join(pf)
-                .join(dir_name)
-                .join(exe_name);
+            let base = Path::new(drive).join(pf).join(dir_name);
+
+            // Flat: Program Files/QoderWork CN/QoderWork CN.exe
+            let candidate = base.join(exe_name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+            // Nested: Program Files/QoderWork CN/QoderWork CN/QoderWork CN.exe
+            let candidate = base.join(dir_name).join(exe_name);
             if candidate.exists() {
                 return Ok(candidate);
             }
@@ -181,81 +187,89 @@ fn find_app_exe_windows() -> AppResult<PathBuf> {
     }
 
     Err(AppError::AppNotFound(
-        "QoderWork CN executable not found. Please set the path manually.".to_string(),
+        "QoderWork CN executable not found. Please set the path manually in Settings.".to_string(),
     ))
 }
 
 #[cfg(target_os = "windows")]
 fn find_exe_from_registry() -> Option<PathBuf> {
-    use std::path::PathBuf;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::RegKey;
 
-    // We read registry using std::process::Command to avoid winreg dependency
-    let keys = [
-        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    let uninstall_roots: &[(fn() -> RegKey, &str)] = &[
+        (|| RegKey::predef(HKEY_LOCAL_MACHINE), r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (|| RegKey::predef(HKEY_CURRENT_USER), r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (|| RegKey::predef(HKEY_LOCAL_MACHINE), r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
     ];
 
-    for key_root in &keys {
-        let output = std::process::Command::new("reg")
-            .args(["query", key_root, "/s", "/v", "DisplayName"])
-            .output()
-            .ok()?;
+    for (make_root, path) in uninstall_roots {
+        let base_key = match make_root().open_subkey_with_flags(path, KEY_READ) {
+            Ok(k) => k,
+            Err(_) => continue,
+        };
 
-        if !output.status.success() {
-            continue;
-        }
+        for subkey_name in base_key.enum_keys().flatten() {
+            let subkey = match base_key.open_subkey_with_flags(&subkey_name, KEY_READ) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut current_key = String::new();
+            let display_name: String = match subkey.get_value("DisplayName") {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
 
-        for line in stdout.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("HKEY_") {
-                current_key = trimmed.to_string();
+            if !display_name.contains("QoderWork CN") {
+                continue;
             }
-            if trimmed.contains("QoderWork CN") && !current_key.is_empty() {
-                // Now query InstallLocation for this key
-                if let Some(install_location) = query_reg_value(&current_key, "InstallLocation") {
-                    let exe_path =
-                        PathBuf::from(&install_location).join("QoderWork CN.exe");
-                    if exe_path.exists() {
-                        return Some(exe_path);
-                    }
+
+            // Try InstallLocation
+            if let Ok(install_loc) = subkey.get_value::<String, _>("InstallLocation") {
+                let exe_path = PathBuf::from(&install_loc).join("QoderWork CN.exe");
+                if exe_path.exists() {
+                    return Some(exe_path);
                 }
-                // Try DisplayIcon as fallback
-                if let Some(display_icon) = query_reg_value(&current_key, "DisplayIcon") {
-                    let icon_path = PathBuf::from(&display_icon);
-                    if icon_path.exists() {
-                        return Some(icon_path);
-                    }
+                // Nested layout
+                let exe_path = PathBuf::from(&install_loc).join("QoderWork CN").join("QoderWork CN.exe");
+                if exe_path.exists() {
+                    return Some(exe_path);
                 }
             }
-        }
-    }
 
-    None
-}
+            // Try DisplayIcon — but only if it actually points to an .exe file
+            // (some installers set DisplayIcon to a .ico file, which is not an executable)
+            if let Ok(icon_path) = subkey.get_value::<String, _>("DisplayIcon") {
+                let icon_path = PathBuf::from(&icon_path);
+                if icon_path.exists() {
+                    if let Some(ext) = icon_path.extension() {
+                        if ext.eq_ignore_ascii_case("exe") {
+                            return Some(icon_path);
+                        }
+                    }
+                }
+            }
 
-#[cfg(target_os = "windows")]
-fn query_reg_value(key: &str, value_name: &str) -> Option<String> {
-    let output = std::process::Command::new("reg")
-        .args(["query", key, "/v", value_name])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains(value_name) {
-            // Format: "    InstallLocation    REG_SZ    C:\Path\To\App"
-            let parts: Vec<&str> = trimmed.split("REG_SZ").collect();
-            if parts.len() >= 2 {
-                return Some(parts[1].trim().to_string());
+            // Try UninstallString — parse the uninstaller path and look for
+            // the main exe in the same directory
+            if let Ok(uninstall_str) = subkey.get_value::<String, _>("UninstallString") {
+                // UninstallString format: "path\to\Uninstall.exe" /flags
+                // Strip quotes and arguments to get the directory
+                let trimmed = uninstall_str.trim().trim_matches('"');
+                if let Some(uninstall_exe) = trimmed.split_whitespace().next() {
+                    let uninstall_path = PathBuf::from(uninstall_exe.trim_matches('"'));
+                    if let Some(dir) = uninstall_path.parent() {
+                        // Flat layout
+                        let exe_path = dir.join("QoderWork CN.exe");
+                        if exe_path.exists() {
+                            return Some(exe_path);
+                        }
+                        // Nested layout
+                        let exe_path = dir.join("QoderWork CN").join("QoderWork CN.exe");
+                        if exe_path.exists() {
+                            return Some(exe_path);
+                        }
+                    }
+                }
             }
         }
     }

@@ -5,12 +5,14 @@ interface AccountListProps {
   accounts: AccountWithStatus[];
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
+  disabled?: boolean;
 }
 
 export function AccountList({
   accounts,
   onSwitch,
   onDelete,
+  disabled,
 }: AccountListProps) {
   if (accounts.length === 0) {
     return (
@@ -28,13 +30,18 @@ export function AccountList({
       {accounts.map((account) => (
         <div
           key={account.id}
-          className={`group flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer ${
+          className={`group flex items-center justify-between p-4 rounded-xl border transition-all ${
+            disabled
+              ? "opacity-50 pointer-events-none"
+              : "cursor-pointer"
+          } ${
             account.is_current
               ? "bg-accent/10 border-accent/30"
               : "bg-bg-secondary border-bg-tertiary hover:border-accent/20 hover:bg-bg-secondary/80"
           }`}
-          onClick={() => !account.is_current && onSwitch(account.id)}
+          onClick={() => !disabled && !account.is_current && onSwitch(account.id)}
           onContextMenu={(e) => {
+            if (disabled) return;
             e.preventDefault();
             if (
               window.confirm(`确定要删除账号「${account.label}」吗？`)

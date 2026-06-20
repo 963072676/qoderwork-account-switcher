@@ -212,6 +212,10 @@ pub fn clear_session(paths: &AppPaths) -> AppResult<()> {
     remove_file_if_exists(&paths.auth_v2_dat)?;
     remove_file_if_exists(&paths.lockfile)?;
 
+    // Remove .auth-cn token files (critical: stale tokens cause wrong user auth)
+    remove_file_if_exists(&paths.auth_dir.join("id"))?;
+    remove_file_if_exists(&paths.auth_dir.join("user"))?;
+
     // Clear Partitions subdirectories
     for subdir_name in PARTITIONS_SUBDIRS {
         let dir = paths.partitions_main.join(subdir_name);

@@ -6,7 +6,14 @@ use std::time::Duration;
 use sysinfo::System;
 
 /// Process name patterns to match when looking for QoderWork CN processes.
-const PROCESS_PATTERNS: &[&str] = &["QoderWork", "qoderclicn", "qodercli"];
+/// These match against the executable file name (not the full path).
+const PROCESS_EXE_NAMES: &[&str] = &[
+    "qoderwork cn.exe",
+    "qoderclicn.exe",
+    "qodercli.exe",
+    "qoderclicn",
+    "qodercli",
+];
 
 /// Kill all QoderWork CN related processes using sysinfo.
 ///
@@ -50,6 +57,34 @@ pub fn kill_app() -> AppResult<()> {
     Ok(())
 }
 
+/// Check if a process matches QoderWork CN by its exe file name.
+fn is_qoderwork_process(exe_path: &str, proc_name: &str) -> bool {
+    let name_lower = proc_name.to_lowercase();
+    let exe_lower = exe_path.to_lowercase();
+
+    // Check process name
+    for pattern in PROCESS_EXE_NAMES {
+        if name_lower == *pattern || exe_lower.contains(pattern) {
+            return true;
+        }
+    }
+
+    // Also check the exe file name (last component of path)
+    if let Some(exe_name) = std::path::Path::new(exe_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+    {
+        let exe_name_lower = exe_name.to_lowercase();
+        for pattern in PROCESS_EXE_NAMES {
+            if exe_name_lower == *pattern {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// Find and kill all processes matching known QoderWork patterns.
 /// Excludes the switcher's own process to avoid killing ourselves.
 /// Returns the number of processes that were sent a kill signal.
@@ -65,22 +100,11 @@ fn kill_matching_processes(sys: &System) -> usize {
 
         // Skip the switcher's own process
         let exe_lower = exe_str.to_lowercase();
-        if exe_lower.contains("account-switcher") || exe_lower.contains("switcher") {
+        if exe_lower.contains("account-switcher") || exe_lower.contains("qw-switcher") {
             continue;
         }
 
-        let name_lower = name.to_lowercase();
-
-        let mut matched = false;
-        for pattern in PROCESS_PATTERNS {
-            let pattern_lower = pattern.to_lowercase();
-            if name_lower.contains(&pattern_lower) || exe_lower.contains(&pattern_lower) {
-                matched = true;
-                break;
-            }
-        }
-
-        if matched {
+        if is_qoderwork_process(&exe_str, &name) {
             log::info!(
                 "Killing process: pid={}, name={}, exe={}",
                 pid,
@@ -88,29 +112,7 @@ fn kill_matching_processes(sys: &System) -> usize {
                 exe_str
             );
 
-            // Use taskkill on Windows for more reliable termination
-            #[cfg(target_os = "windows")]
-            {
-                let pid_u32 = pid.as_u32();
-                let result = Command::new("taskkill")
-                    .args(["/F", "/PID", &pid_u32.to_string()])
-                    .output();
-                match result {
-                    Ok(output) if output.status.success() => {
-                        log::info!("taskkill /F /PID {} succeeded", pid_u32);
-                    }
-                    _ => {
-                        log::warn!("taskkill failed for PID {}, falling back to process.kill()", pid_u32);
-                        process.kill();
-                    }
-                }
-            }
-
-            #[cfg(not(target_os = "windows"))]
-            {
-                process.kill();
-            }
-
+            process.kill();
             count += 1;
         }
     }
@@ -134,15 +136,11 @@ pub fn launch_app(exe_path: &Path) -> AppResult<()> {
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-
+        // Plain spawn — works correctly for GUI apps from GUI subsystem binaries.
         Command::new(exe_path)
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
             .spawn()
             .map_err(|e| {
-                AppError::Process(format!("Failed to launch {:?}: {}", exe_path, e))
+                AppError::Process(format!("启动失败 {:?}: {}", exe_path, e))
             })?;
     }
 
@@ -170,23 +168,19 @@ pub fn launch_app(exe_path: &Path) -> AppResult<()> {
 }
 
 /// Check if any QoderWork CN processes are currently running.
-#[allow(dead_code)]
 pub fn is_app_running() -> bool {
     let mut sys = System::new_all();
     sys.refresh_all();
 
     for (_pid, process) in sys.processes() {
-        let name = process.name().to_string_lossy().to_lowercase();
+        let name = process.name().to_string_lossy().to_string();
         let exe_str = process
             .exe()
-            .map(|p| p.to_string_lossy().to_lowercase().to_string())
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        for pattern in PROCESS_PATTERNS {
-            let pattern_lower = pattern.to_lowercase();
-            if name.contains(&pattern_lower) || exe_str.contains(&pattern_lower) {
-                return true;
-            }
+        if is_qoderwork_process(&exe_str, &name) {
+            return true;
         }
     }
 
@@ -199,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_process_patterns_defined() {
-        assert!(!PROCESS_PATTERNS.is_empty());
-        assert!(PROCESS_PATTERNS.contains(&"QoderWork"));
+        assert!(!PROCESS_EXE_NAMES.is_empty());
+        assert!(PROCESS_EXE_NAMES.contains(&"qoderwork cn.exe"));
     }
 }

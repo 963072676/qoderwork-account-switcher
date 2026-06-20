@@ -3,6 +3,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AccountWithStatus, ProgressEvent } from "../types";
 
+function parseError(e: unknown): string {
+  const raw = String(e);
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.message === "string") {
+      return parsed.message;
+    }
+  } catch {
+    // not JSON
+  }
+  return raw;
+}
+
 interface UseAccountsReturn {
   accounts: AccountWithStatus[];
   currentUserId: string | null;
@@ -14,6 +27,7 @@ interface UseAccountsReturn {
   switchAccount: (id: string) => Promise<void>;
   saveAccount: () => Promise<void>;
   detectCurrent: () => Promise<void>;
+  setError: (msg: string | null) => void;
   clearError: () => void;
   clearProgress: () => void;
 }
@@ -35,7 +49,7 @@ export function useAccounts(): UseAccountsReturn {
       setCurrentUserId(result.current_user_id);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(parseError(e));
     } finally {
       setLoading(false);
     }
@@ -61,7 +75,7 @@ export function useAccounts(): UseAccountsReturn {
         await invoke("add_account", { phone, label, userId });
         await fetchAccounts();
       } catch (e) {
-        setError(String(e));
+        setError(parseError(e));
         throw e;
       }
     },
@@ -75,7 +89,7 @@ export function useAccounts(): UseAccountsReturn {
         await invoke("delete_account", { id });
         await fetchAccounts();
       } catch (e) {
-        setError(String(e));
+        setError(parseError(e));
         throw e;
       }
     },
@@ -89,10 +103,16 @@ export function useAccounts(): UseAccountsReturn {
         setProgress({ step: "准备切换...", current: 0, total: 4 });
         await invoke("switch_account", { id });
         setProgress(null);
+        // Wait for Electron app to start and write .status.json
+        await new Promise((r) => setTimeout(r, 3000));
         await fetchAccounts();
+        // Retry once if current account hasn't updated yet
+        setTimeout(async () => {
+          await fetchAccounts();
+        }, 3000);
       } catch (e) {
         setProgress(null);
-        setError(String(e));
+        setError(parseError(e));
         throw e;
       }
     },
@@ -102,13 +122,15 @@ export function useAccounts(): UseAccountsReturn {
   const saveAccount = useCallback(async () => {
     try {
       setError(null);
-      setProgress({ step: "正在保存...", current: 0, total: 2 });
+      setProgress({ step: "正在保存...", current: 0, total: 3 });
       await invoke("save_current_account");
       setProgress(null);
+      // Wait for Electron app to start and write .status.json
+      await new Promise((r) => setTimeout(r, 3000));
       await fetchAccounts();
     } catch (e) {
       setProgress(null);
-      setError(String(e));
+      setError(parseError(e));
       throw e;
     }
   }, [fetchAccounts]);
@@ -119,7 +141,7 @@ export function useAccounts(): UseAccountsReturn {
       await invoke("detect_current_account");
       await fetchAccounts();
     } catch (e) {
-      setError(String(e));
+      setError(parseError(e));
       throw e;
     }
   }, [fetchAccounts]);
@@ -138,6 +160,7 @@ export function useAccounts(): UseAccountsReturn {
     switchAccount,
     saveAccount,
     detectCurrent,
+    setError,
     clearError,
     clearProgress,
   };

@@ -5,7 +5,6 @@ use crate::core::state;
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use std::path::PathBuf;
-use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_store::StoreExt;
@@ -59,8 +58,10 @@ pub async fn switch_account(
 
     // Step 1: Kill the app
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
-    process::kill_app()?;
-    thread::sleep(Duration::from_millis(2000));
+    tokio::task::spawn_blocking(|| process::kill_app())
+        .await
+        .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
+    tokio::time::sleep(Duration::from_millis(2000)).await;
 
     // Step 2: Clear current session
     emit_progress(&app_handle, "正在清除当前会话...", 2, total_steps);
@@ -77,8 +78,16 @@ pub async fn switch_account(
 
     // Step 4: Relaunch the app
     emit_progress(&app_handle, "正在启动 QoderWork CN...", 4, total_steps);
-    let exe_path = get_exe_path(&app_handle);
+    let exe_path = get_exe_path(&app_handle)?;
     process::launch_app(&exe_path)?;
+
+    // Verify the app actually started
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    if !process::is_app_running() {
+        return Err(AppError::Process(
+            "QoderWork CN 启动失败，请手动打开应用并重试。".to_string(),
+        ));
+    }
 
     log::info!("Successfully switched to account {}", id);
     Ok(())
@@ -132,8 +141,10 @@ pub async fn save_current_account(
 
     // Step 1: Kill the app to ensure data is flushed
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
-    process::kill_app()?;
-    thread::sleep(Duration::from_millis(2000));
+    tokio::task::spawn_blocking(|| process::kill_app())
+        .await
+        .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
+    tokio::time::sleep(Duration::from_millis(2000)).await;
 
     // Step 2: Save session data
     emit_progress(&app_handle, "正在保存账号数据...", 2, total_steps);
@@ -153,8 +164,14 @@ pub async fn save_current_account(
 
     // Step 3: Relaunch the app
     emit_progress(&app_handle, "正在启动 QoderWork CN...", 3, total_steps);
-    let exe_path = get_exe_path(&app_handle);
+    let exe_path = get_exe_path(&app_handle)?;
     process::launch_app(&exe_path)?;
+
+    // Verify the app actually started
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    if !process::is_app_running() {
+        log::warn!("QoderWork CN may not have started after save operation");
+    }
 
     log::info!("Successfully saved session for account {}", account_id);
     Ok(())
@@ -173,25 +190,19 @@ fn emit_progress(app_handle: &tauri::AppHandle, step: &str, current: u32, total:
 }
 
 /// Resolve the executable path, preferring the stored path then falling back to auto-detection.
-pub fn get_exe_path(app_handle: &tauri::AppHandle) -> PathBuf {
+pub fn get_exe_path(app_handle: &tauri::AppHandle) -> AppResult<PathBuf> {
     // Try to get from store plugin
     if let Ok(store) = app_handle.store(STORE_FILE) {
         if let Some(val) = store.get("app_exe_path") {
             if let Some(path_str) = val.as_str() {
                 let path = PathBuf::from(path_str);
                 if path.exists() {
-                    return path;
+                    return Ok(path);
                 }
             }
         }
     }
 
     // Fall back to auto-detection
-    match crate::core::paths::find_app_exe() {
-        Ok(path) => path,
-        Err(e) => {
-            log::error!("Failed to find app executable: {}", e);
-            PathBuf::from("QoderWork CN")
-        }
-    }
+    crate::core::paths::find_app_exe()
 }

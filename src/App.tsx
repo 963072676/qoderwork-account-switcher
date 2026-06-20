@@ -19,15 +19,23 @@ export default function App() {
     switchAccount,
     saveAccount,
     detectCurrent,
+    setError,
     clearError,
   } = useAccounts();
 
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  const isBusy = loading || !!progress;
+
   const handleSwitch = async (id: string) => {
+    if (isBusy) return;
     const account = accounts.find((a) => a.id === id);
     if (!account) return;
+    if (!account.saved) {
+      setError(`账号「${account.label}」尚未保存会话数据。请先登录该账号，然后点击"保存当前"。`);
+      return;
+    }
     if (window.confirm(`确定要切换到账号「${account.label}」吗？\n当前未保存的更改将会丢失。`)) {
       try {
         await switchAccount(id);
@@ -76,12 +84,13 @@ export default function App() {
         accounts={accounts}
         onSwitch={handleSwitch}
         onDelete={handleDelete}
+        disabled={isBusy}
       />
 
       <div className="px-4 py-3 bg-bg-secondary border-t border-bg-tertiary flex gap-3">
         <button
           onClick={handleSave}
-          disabled={loading || !!progress}
+          disabled={isBusy}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-bg-tertiary text-slate-200 font-medium hover:bg-slate-600 transition-colors disabled:opacity-50"
         >
           <Save size={16} />
@@ -89,7 +98,7 @@ export default function App() {
         </button>
         <button
           onClick={() => setShowForm(true)}
-          disabled={loading || !!progress}
+          disabled={isBusy}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white font-medium hover:bg-accent-dark transition-colors disabled:opacity-50"
         >
           <UserPlus size={16} />
@@ -97,7 +106,7 @@ export default function App() {
         </button>
         <button
           onClick={() => setShowSettings(true)}
-          disabled={loading || !!progress}
+          disabled={isBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-bg-tertiary text-slate-200 font-medium hover:bg-slate-600 transition-colors disabled:opacity-50"
         >
           <Settings size={16} />
