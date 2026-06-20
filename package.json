@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
