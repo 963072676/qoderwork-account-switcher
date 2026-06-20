@@ -1,0 +1,39 @@
+# === Rust ===
+target/
+
+# === Node ===
+node_modules/
+dist/
+
+# === Tauri ===
+src-tauri/target/
+
+# === Build outputs ===
+*.exe
+*.msi
+*.dmg
+*.app
+*.tar.gz
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# === Logs ===
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# === Environment ===
+.env
+.env.local
+.env.*.local
