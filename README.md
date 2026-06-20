@@ -2,13 +2,13 @@
 
 <div align="center">
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/your-username/qoderwork-account-switcher/release.yml?logo=github&label=构建)](https://github.com/your-username/qoderwork-account-switcher/actions)
-[![License](https://img.shields.io/github/license/your-username/qoderwork-account-switcher?label=许可证)](./LICENSE)
-[![Release](https://img.shields.io/github/v/release/your-username/qoderwork-account-switcher?label=最新版本)](https://github.com/your-username/qoderwork-account-switcher/releases/latest)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/963072676/qoderwork-account-switcher/release.yml?logo=github&label=构建)](https://github.com/963072676/qoderwork-account-switcher/actions)
+[![License](https://img.shields.io/github/license/963072676/qoderwork-account-switcher?label=许可证)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/963072676/qoderwork-account-switcher?label=最新版本)](https://github.com/963072676/qoderwork-account-switcher/releases/latest)
 
 **一键切换 QoderWork CN 账号，轻松管理多账号会话**
 
-[下载安装](#安装) · [使用指南](#使用指南) · [开发指南](#开发指南) · [问题反馈](https://github.com/your-username/qoderwork-account-switcher/issues)
+[下载安装](#安装) · [使用指南](#使用指南) · [开发指南](#开发指南) · [问题反馈](https://github.com/963072676/qoderwork-account-switcher/issues)
 
 </div>
 
@@ -32,7 +32,7 @@
 
 ## 安装
 
-前往 [Releases 页面](https://github.com/your-username/qoderwork-account-switcher/releases/latest) 下载最新版本的安装包：
+前往 [Releases 页面](https://github.com/963072676/qoderwork-account-switcher/releases/latest) 下载最新版本的安装包：
 
 | 操作系统 | 文件格式 | 说明 |
 | --- | --- | --- |
@@ -91,7 +91,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/qoderwork-account-switcher.git
+git clone https://github.com/963072676/qoderwork-account-switcher.git
 cd qoderwork-account-switcher
 
 # 安装依赖
