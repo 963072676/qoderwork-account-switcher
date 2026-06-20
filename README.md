@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/963072676/qoderwork-account-switcher?label=许可证)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/963072676/qoderwork-account-switcher?label=最新版本)](https://github.com/963072676/qoderwork-account-switcher/releases/latest)
 
-**一键切换 QoderWork CN 账号，轻松管理多账号会话**
+**一键切换 QoderWork CN 账号，轻松管理多账号会话、额度与签到**
 
 [下载安装](#安装) · [使用指南](#使用指南) · [开发指南](#开发指南) · [问题反馈](https://github.com/963072676/qoderwork-account-switcher/issues)
 
@@ -24,8 +24,15 @@
 
 - **一键切换账号** — 无需重复登录，一键即可切换至目标 QoderWork CN 账号
 - **多账号管理** — 支持同时管理 N 个账号，自由添加、删除和重命名
-- **自动检测安装路径** — 智能识别 QoderWork CN 的安装位置，无需手动配置
+- **实时额度展示** — 四列显示每个账号的核心额度信息：
+  - 每日免费 Qwen 3.7 Max 模型剩余额度
+  - 计划额度 + 个人资源包 + 企业资源包总剩余
+  - 当日签到状态
+  - 订阅剩余天数
+- **一键签到** — 为所有已保存账号批量领取每日签到奖励，签到后自动刷新区额信息
+- **自动检测安装路径** — 智能识别 QoderWork CN 的安装位置，支持手动浏览选择
 - **自动保存会话数据** — 每个账号的会话信息独立保存，切换时自动恢复
+- **安全加密存储** — 采用 Electron safeStorage (AES-256-GCM) + DPAPI 加密保护认证数据
 - **跨平台支持** — 同时支持 Windows 和 macOS 系统
 
 ---
@@ -48,29 +55,50 @@
 ### 首次使用
 
 1. **启动应用** — 安装并打开 QoderWork Account Switcher
-2. **添加账号** — 点击「添加账号」按钮，输入账号名称进行标识
-3. **保存会话** — 在当前 QoderWork CN 登录后，点击「保存当前会话」捕获登录状态
-4. **一键切换** — 在账号列表中选择目标账号，点击「切换」即可
+2. **设置路径** — 点击右上角「设置」，配置 QoderWork CN 的可执行文件路径（支持自动检测和手动浏览选择）
+3. **添加账号** — 点击「添加账号」按钮，输入手机号和备注名称进行标识
+4. **保存会话** — 在当前 QoderWork CN 登录后，点击「保存当前」捕获登录状态
+5. **一键切换** — 在账号列表中选择目标账号，点击「切换」即可
 
 ### 功能说明
 
+#### 额度信息
+
+每个账号自动展示四列关键信息：
+
+- **每日免费** — Qwen 3.7 Max 模型的每日免费使用剩余次数（通过 Activity API 实时获取）
+- **其他额度** — 计划额度、个人资源包、企业资源包的总剩余额度
+- **签到状态** — 当日是否已完成签到（绿色对勾表示已签到）
+- **订阅天数** — 当前订阅计划距到期的剩余天数
+
+额度数据在添加账号后自动获取，也可通过页面底部按钮手动刷新。
+
+#### 一键签到
+
+点击底部的「一键签到」按钮，系统会自动为所有已保存的账号执行签到操作：
+
+- 并行调用所有账号的签到领取接口
+- 显示签到结果摘要（成功数 / 已签到数 / 失败数）
+- 签到完成后自动刷新所有账号的额度和签到状态
+
 #### 添加账号
 
-点击主界面的「添加账号」按钮，为该账号设置一个易于识别的名称。应用会自动检测当前 QoderWork CN 的会话状态并关联到该账号。
+点击主界面的「添加账号」按钮，输入手机号和备注名称。应用会自动检测当前 QoderWork CN 的会话状态并关联到该账号。
 
 #### 保存会话
 
-在 QoderWork CN 中完成登录后，回到本应用点击「保存当前会话」。应用会自动捕获并保存当前的认证信息，以便后续快速切换。
+在 QoderWork CN 中完成登录后，回到本应用点击「保存当前」。应用会自动捕获并加密保存当前的认证信息，以便后续快速切换。
 
 #### 切换账号
 
 在账号列表中选择想要切换的目标账号，点击「切换」按钮。应用会自动替换 QoderWork CN 的会话数据，完成账号切换。
 
-#### 管理账号
+#### 设置
 
-- **重命名**：右键点击账号条目，选择「重命名」
-- **删除**：右键点击账号条目，选择「删除」
-- **刷新状态**：点击账号条目右侧的刷新图标，检测当前会话是否仍然有效
+点击右上角齿轮图标打开设置面板：
+
+- **程序路径** — 支持自动检测和手动浏览选择 QoderWork CN 的可执行文件路径
+- 路径配置会自动持久化保存，无需每次重新设置
 
 ---
 
@@ -119,17 +147,34 @@ pnpm tauri build
 
 ```
 qoderwork-account-switcher/
-├── src/                  # 前端源码 (React + TypeScript)
-│   ├── components/       # UI 组件
-│   ├── hooks/            # 自定义 Hooks
-│   ├── lib/              # 工具函数
-│   └── App.tsx           # 应用入口
-├── src-tauri/            # Tauri / Rust 后端
-│   ├── src/              # Rust 源码
-│   │   └── main.rs       # 后端入口
-│   ├── Cargo.toml        # Rust 依赖配置
-│   └── tauri.conf.json   # Tauri 配置
-├── public/               # 静态资源
+├── src/                      # 前端源码 (React + TypeScript)
+│   ├── components/           # UI 组件
+│   │   ├── AccountList.tsx   # 账号列表（含额度展示）
+│   │   ├── AccountForm.tsx   # 添加账号表单
+│   │   ├── Header.tsx        # 顶部导航栏
+│   │   ├── SettingsModal.tsx # 设置弹窗
+│   │   └── SwitchProgress.tsx# 切换进度条
+│   ├── hooks/
+│   │   └── useAccounts.ts    # 账号管理核心 Hook
+│   ├── types.ts              # TypeScript 类型定义
+│   └── App.tsx               # 应用入口
+├── src-tauri/                # Tauri / Rust 后端
+│   ├── src/
+│   │   ├── lib.rs            # 插件注册与命令入口
+│   │   ├── commands/         # Tauri 命令模块
+│   │   │   ├── accounts.rs   # 账号 CRUD
+│   │   │   ├── switch.rs     # 账号切换逻辑
+│   │   │   ├── detect.rs     # 路径检测与设置持久化
+│   │   │   └── quota_cmd.rs  # 额度查询与签到命令
+│   │   ├── core/             # 核心业务逻辑
+│   │   │   ├── quota.rs      # 额度/签到/Cosy认证
+│   │   │   ├── paths.rs      # 路径管理
+│   │   │   └── state.rs      # 状态持久化
+│   │   └── error.rs          # 统一错误处理
+│   ├── capabilities/         # Tauri v2 权限配置
+│   ├── Cargo.toml            # Rust 依赖配置
+│   └── tauri.conf.json       # Tauri 配置
+├── public/                   # 静态资源
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.js
@@ -147,6 +192,8 @@ qoderwork-account-switcher/
 | [TypeScript](https://www.typescriptlang.org/) | 类型安全 |
 | [Tailwind CSS](https://tailwindcss.com/) | 原子化 CSS 框架 |
 | [Rust](https://www.rust-lang.org/) | 后端逻辑 |
+| [tauri-plugin-store](https://github.com/tauri-apps/plugins-workspace) | 设置持久化 |
+| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | 文件对话框 |
 
 ---
 

@@ -31,6 +31,10 @@ pub fn run() {
             commands::detect::get_exe_path,
             commands::detect::set_exe_path,
             commands::detect::auto_detect_exe,
+            commands::quota_cmd::get_quota_usage,
+            commands::quota_cmd::get_account_quota,
+            commands::quota_cmd::refresh_all_quotas,
+            commands::quota_cmd::claim_checkin_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

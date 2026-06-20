@@ -29,6 +29,9 @@ pub enum AppError {
 
     #[error("Session error: {0}")]
     Session(String),
+
+    #[error("API error: {0}")]
+    Api(String),
 }
 
 /// Serializable error for frontend consumption
@@ -50,6 +53,7 @@ impl From<AppError> for tauri::ipc::InvokeError {
             AppError::Path(_) => "Path",
             AppError::AppNotFound(_) => "AppNotFound",
             AppError::Session(_) => "Session",
+            AppError::Api(_) => "Api",
         };
         let serialized = SerializedError {
             message: err.to_string(),

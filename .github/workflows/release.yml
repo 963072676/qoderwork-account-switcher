@@ -86,7 +86,7 @@ jobs:
             - **macOS**: 下载 `.dmg` 或 `.app.tar.gz`
 
             详细更新日志请参阅 [CHANGELOG](./CHANGELOG.md)。
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
 
       - name: Build Tauri app (macOS)
@@ -104,6 +104,6 @@ jobs:
             - **macOS**: 下载 `.dmg` 或 `.app.tar.gz`
 
             详细更新日志请参阅 [CHANGELOG](./CHANGELOG.md)。
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: "--target aarch64-apple-darwin"

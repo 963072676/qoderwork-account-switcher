@@ -49,12 +49,22 @@ pub fn set_exe_path(
 
 /// Auto-detect the QoderWork CN executable path by scanning common install locations.
 /// Returns the detected path, or an error if not found.
+/// Also persists the detected path to the store for future use.
 #[tauri::command]
-pub fn auto_detect_exe() -> AppResult<String> {
+pub fn auto_detect_exe(app_handle: tauri::AppHandle) -> AppResult<String> {
     match paths::find_app_exe() {
         Ok(path) => {
             let path_str = path.to_string_lossy().to_string();
             log::info!("Auto-detected app executable: {}", path_str);
+
+            // Persist the detected path to the store
+            if let Ok(store) = app_handle.store(STORE_FILE) {
+                store.set("app_exe_path", serde_json::json!(path_str));
+                if let Err(e) = store.save() {
+                    log::warn!("Failed to persist auto-detected path: {}", e);
+                }
+            }
+
             Ok(path_str)
         }
         Err(e) => {

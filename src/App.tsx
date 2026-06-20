@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UserPlus, Save, Settings } from "lucide-react";
+import { UserPlus, Save, CheckCircle } from "lucide-react";
 import { useAccounts } from "./hooks/useAccounts";
 import { Header } from "./components/Header";
 import { AccountList } from "./components/AccountList";
@@ -14,17 +14,22 @@ export default function App() {
     loading,
     progress,
     error,
+    quotas,
+    quotaErrors,
     addAccount,
     deleteAccount,
     switchAccount,
     saveAccount,
     detectCurrent,
+    claimCheckinAll,
     setError,
     clearError,
   } = useAccounts();
 
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [checkinBusy, setCheckinBusy] = useState(false);
+  const [checkinMsg, setCheckinMsg] = useState<string | null>(null);
 
   const isBusy = loading || !!progress;
 
@@ -61,6 +66,33 @@ export default function App() {
     }
   };
 
+  const handleCheckinAll = async () => {
+    if (checkinBusy) return;
+    setCheckinBusy(true);
+    setCheckinMsg("正在签到...");
+    try {
+      const result = await claimCheckinAll();
+      const claimed = Object.values(result.results).filter(
+        (r) => r === "CLAIMED"
+      ).length;
+      const already = Object.values(result.results).filter(
+        (r) => r === "ALREADY_CLAIMED"
+      ).length;
+      const errCount = Object.keys(result.errors).length;
+      const parts: string[] = [];
+      if (claimed > 0) parts.push(`${claimed} 个签到成功`);
+      if (already > 0) parts.push(`${already} 个已签到`);
+      if (errCount > 0) parts.push(`${errCount} 个失败`);
+      setCheckinMsg(parts.join("，") || "签到完成");
+    } catch {
+      setCheckinMsg("签到失败");
+    } finally {
+      setCheckinBusy(false);
+      // Clear the message after 5 seconds
+      setTimeout(() => setCheckinMsg(null), 5000);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
       <Header
@@ -84,6 +116,8 @@ export default function App() {
         accounts={accounts}
         onSwitch={handleSwitch}
         onDelete={handleDelete}
+        quotas={quotas}
+        quotaErrors={quotaErrors}
         disabled={isBusy}
       />
 
@@ -105,12 +139,13 @@ export default function App() {
           <span className="text-sm">添加账号</span>
         </button>
         <button
-          onClick={() => setShowSettings(true)}
-          disabled={isBusy}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-bg-tertiary text-slate-200 font-medium hover:bg-slate-600 transition-colors disabled:opacity-50"
+          onClick={handleCheckinAll}
+          disabled={isBusy || checkinBusy}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          title={checkinMsg || "一键签到所有账号"}
         >
-          <Settings size={16} />
-          <span className="text-sm">设置</span>
+          <CheckCircle size={16} />
+          <span className="text-sm">{checkinBusy ? "签到中..." : checkinMsg ? checkinMsg : "一键签到"}</span>
         </button>
       </div>
 
