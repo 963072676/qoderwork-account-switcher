@@ -16,7 +16,7 @@
 
 ## 截图
 
-![screenshot](docs/screenshot.png)
+<img width="527" height="1094" alt="qoderwork-switch" src="https://github.com/user-attachments/assets/5a7cabc9-d863-43a0-9e86-75a76caa00ea" />
 
 ---
 
