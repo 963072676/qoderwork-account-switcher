@@ -83,6 +83,7 @@ pub fn get_current_user_id(paths: &AppPaths) -> Option<String> {
 
 /// Diagnostic info for troubleshooting detection issues on other machines.
 #[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusDebugInfo {
     pub status_file_exists: bool,
     pub status_file_path: String,

@@ -21,17 +21,18 @@ pub struct ProgressPayload {
 }
 
 /// Switch to a different account:
-/// 1. Kill the running app
-/// 2. Clear current session data
-/// 3. Restore the target account's saved session
-/// 4. Relaunch the app
+/// 1. Auto-save current account's session (prevent data loss)
+/// 2. Kill the running app
+/// 3. Clear current session data
+/// 4. Restore the target account's saved session
+/// 5. Relaunch the app
 #[tauri::command]
 pub async fn switch_account(
     app_handle: tauri::AppHandle,
     paths: State<'_, AppPaths>,
     id: String,
 ) -> AppResult<()> {
-    let total_steps: u32 = 4;
+    let total_steps: u32 = 5;
 
     // Validate account exists and has saved data
     let state_data = state::read_state(&paths)?;
@@ -43,32 +44,58 @@ pub async fn switch_account(
 
     if !account.saved {
         return Err(AppError::Session(format!(
-            "Account {} has no saved session data. Please log in and save first.",
-            id
+            "账号「{}」尚未保存会话数据。请先登录该账号，然后点击「保存当前」。",
+            account.label
         )));
     }
 
     let profile_dir = paths.profile_dir(&id);
     if !profile_dir.exists() {
         return Err(AppError::Session(format!(
-            "Profile directory missing for account {}: {:?}",
-            id, profile_dir
+            "账号「{}」的会话数据目录缺失: {:?}",
+            account.label, profile_dir
         )));
     }
 
-    // Step 1: Kill the app
-    emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
+    // Step 1: Auto-save current account before switching (prevent data loss)
+    emit_progress(&app_handle, "正在保存当前账号...", 1, total_steps);
+    if let Some(current_uid) = crate::core::status::get_current_user_id(&paths) {
+        // Find the currently active account
+        if let Some(current_account) = state_data.accounts.iter().find(|a| a.user_id.as_deref() == Some(&current_uid)) {
+            if current_account.id != id {
+                log::info!("[switch] Auto-saving current account {} before switching", current_account.id);
+                match session::save_auth_data(&paths, &current_account.id) {
+                    Ok(_) => {
+                        // Mark as saved
+                        let mut state_copy = state::read_state(&paths)?;
+                        if let Some(acc) = state_copy.accounts.iter_mut().find(|a| a.id == current_account.id) {
+                            acc.saved = true;
+                        }
+                        state::write_state(&paths, &state_copy)?;
+                        log::info!("[switch] Successfully saved current account {}", current_account.id);
+                    }
+                    Err(e) => {
+                        log::warn!("[switch] Failed to auto-save current account {}: {}", current_account.id, e);
+                        // Don't block the switch — just warn
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 2: Kill the app
+    emit_progress(&app_handle, "正在关闭 QoderWork CN...", 2, total_steps);
     tokio::task::spawn_blocking(|| process::kill_app())
         .await
         .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
     tokio::time::sleep(Duration::from_millis(2000)).await;
 
-    // Step 2: Clear current session
-    emit_progress(&app_handle, "正在清除当前会话...", 2, total_steps);
+    // Step 3: Clear current session
+    emit_progress(&app_handle, "正在清除当前会话...", 3, total_steps);
     session::clear_session(&paths)?;
 
-    // Step 3: Restore target account session
-    emit_progress(&app_handle, "正在恢复账号数据...", 3, total_steps);
+    // Step 4: Restore target account session
+    emit_progress(&app_handle, "正在恢复账号数据...", 4, total_steps);
     session::restore_auth_data(&paths, &id)?;
 
     // Update active account in state
@@ -76,8 +103,8 @@ pub async fn switch_account(
     state_data.active = Some(id.clone());
     state::write_state(&paths, &state_data)?;
 
-    // Step 4: Relaunch the app
-    emit_progress(&app_handle, "正在启动 QoderWork CN...", 4, total_steps);
+    // Step 5: Relaunch the app
+    emit_progress(&app_handle, "正在启动 QoderWork CN...", 5, total_steps);
     let exe_path = get_exe_path(&app_handle)?;
     process::launch_app(&exe_path)?;
 

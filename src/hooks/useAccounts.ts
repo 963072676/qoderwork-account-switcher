@@ -139,24 +139,28 @@ export function useAccounts(): UseAccountsReturn {
     async (id: string) => {
       try {
         setError(null);
-        setProgress({ step: "准备切换...", current: 0, total: 4 });
+        setProgress({ step: "准备切换...", current: 0, total: 5 });
         await invoke("switch_account", { id });
         setProgress(null);
         // Wait for Electron app to start and write .status.json
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise((r) => setTimeout(r, 5000));
         await fetchAccounts();
-        // Retry once if current account hasn't updated yet
+        // Retry fetching to pick up updated status after app fully loads
         setTimeout(async () => {
           await fetchAccounts();
           await refreshQuotas();
-        }, 3000);
+        }, 5000);
+        setTimeout(async () => {
+          await fetchAccounts();
+          await refreshQuotas();
+        }, 10000);
       } catch (e) {
         setProgress(null);
         setError(parseError(e));
         throw e;
       }
     },
-    [fetchAccounts],
+    [fetchAccounts, refreshQuotas],
   );
 
   const saveAccount = useCallback(async () => {
@@ -165,26 +169,31 @@ export function useAccounts(): UseAccountsReturn {
       setProgress({ step: "正在保存...", current: 0, total: 3 });
       await invoke("save_current_account");
       setProgress(null);
-      // Wait for Electron app to start and write .status.json
-      await new Promise((r) => setTimeout(r, 3000));
+      // Wait for Electron app to restart and write .status.json
+      await new Promise((r) => setTimeout(r, 5000));
       await fetchAccounts();
+      await refreshQuotas();
     } catch (e) {
       setProgress(null);
       setError(parseError(e));
       throw e;
     }
-  }, [fetchAccounts]);
+  }, [fetchAccounts, refreshQuotas]);
 
   const detectCurrent = useCallback(async () => {
     try {
       setError(null);
+      setLoading(true);
       await invoke("detect_current_account");
+      // Small delay to let .status.json settle after app operations
+      await new Promise((r) => setTimeout(r, 1000));
       await fetchAccounts();
+      await refreshQuotas();
     } catch (e) {
       setError(parseError(e));
       throw e;
     }
-  }, [fetchAccounts]);
+  }, [fetchAccounts, refreshQuotas]);
 
   const claimCheckinAll = useCallback(async () => {
     try {
