@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { X, UserPlus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, UserPlus, CheckCircle, AlertCircle, Loader } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 
 interface AccountFormProps {
   accountCount: number;
@@ -13,6 +14,27 @@ export function AccountForm({ accountCount, onAdd, onClose }: AccountFormProps) 
   const [userId, setUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(true);
+  const [detected, setDetected] = useState(false);
+
+  // Auto-detect current user ID on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const detectedId = await invoke<string | null>("detect_current_user_id");
+        if (!cancelled && detectedId) {
+          setUserId(detectedId);
+          setDetected(true);
+        }
+      } catch {
+        // Detection failed — user can still enter manually
+      } finally {
+        if (!cancelled) setDetecting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,19 +103,39 @@ export function AccountForm({ accountCount, onAdd, onClose }: AccountFormProps) 
           <div>
             <label className="block text-sm text-slate-400 mb-1.5">
               用户 ID{" "}
-              <span className="text-slate-600">(可选)</span>
+              <span className="text-slate-600">(自动检测)</span>
             </label>
-            <input
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="自动检测或手动输入"
-              className="w-full px-3 py-2.5 rounded-lg bg-bg-primary border border-bg-tertiary text-slate-100 placeholder-slate-600 focus:outline-none focus:border-accent/50 transition-colors"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={userId}
+                onChange={(e) => { setUserId(e.target.value); setDetected(false); }}
+                placeholder="自动检测或手动输入"
+                className="w-full px-3 py-2.5 pr-10 rounded-lg bg-bg-primary border border-bg-tertiary text-slate-100 placeholder-slate-600 focus:outline-none focus:border-accent/50 transition-colors"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                {detecting ? (
+                  <Loader size={14} className="text-slate-500 animate-spin" />
+                ) : detected ? (
+                  <CheckCircle size={14} className="text-emerald-400" />
+                ) : userId ? null : (
+                  <AlertCircle size={14} className="text-slate-600" />
+                )}
+              </div>
+            </div>
+            {detecting && (
+              <p className="text-xs text-slate-500 mt-1">正在检测当前 QoderWork CN 登录状态...</p>
+            )}
+            {!detecting && detected && (
+              <p className="text-xs text-emerald-400 mt-1">已自动检测到当前登录用户</p>
+            )}
+            {!detecting && !detected && !userId && (
+              <p className="text-xs text-slate-500 mt-1">未检测到登录用户，请先在 QoderWork CN 中登录</p>
+            )}
           </div>
 
           {error && (
-            <p className="text-sm text-red-400">{error}</p>
+            <p className="text-sm text-red-400 whitespace-pre-line">{error}</p>
           )}
 
           <div className="flex gap-3 pt-2">

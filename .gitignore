@@ -14,6 +14,8 @@ src-tauri/target/
 *.dmg
 *.app
 *.tar.gz
+!test/*.exe
+!test/*.msi
 
 # === IDE ===
 .vscode/

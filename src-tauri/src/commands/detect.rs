@@ -13,6 +13,17 @@ pub fn detect_current_account(paths: State<'_, AppPaths>) -> AppResult<Option<St
     Ok(user_id)
 }
 
+/// Detect the currently logged-in user ID from .status.json.
+/// Returns the UUID string if a user is detected, or None if not logged in.
+/// This is a lighter version of detect_current_account for the frontend to
+/// pre-fill user_id when adding accounts.
+#[tauri::command]
+pub fn detect_current_user_id(paths: State<'_, AppPaths>) -> AppResult<Option<String>> {
+    let user_id = status::get_current_user_id(&paths);
+    log::info!("[detect] detect_current_user_id: {:?}", user_id);
+    Ok(user_id)
+}
+
 /// Get the configured application executable path from the store.
 /// Returns an empty string if no custom path has been set.
 #[tauri::command]

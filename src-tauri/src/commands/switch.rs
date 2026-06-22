@@ -97,7 +97,8 @@ pub async fn switch_account(
 ///
 /// This detects which account is currently active (via .status.json userId),
 /// finds the matching account in state.json, and saves its session data.
-/// If no matching account is found, falls back to the "active" field in state.json.
+/// If no matching account is found but a user IS detected, auto-creates a new account.
+/// If no user can be detected at all, returns a clear error message.
 #[tauri::command]
 pub async fn save_current_account(
     app_handle: tauri::AppHandle,
@@ -108,9 +109,10 @@ pub async fn save_current_account(
     // Detect current userId from .status.json
     let current_user_id = crate::core::status::get_current_user_id(&paths);
 
-    // Find which account this userId belongs to
-    let state_data = state::read_state(&paths)?;
+    // Read state
+    let mut state_data = state::read_state(&paths)?;
 
+    // Try to find which account this userId belongs to
     let account_id = if let Some(ref uid) = current_user_id {
         // Match by userId
         state_data
@@ -123,14 +125,35 @@ pub async fn save_current_account(
     };
 
     // Fallback to the "active" field in state
-    let account_id = account_id
-        .or_else(|| state_data.active.clone())
-        .ok_or_else(|| {
-            AppError::Session(
-                "无法确定当前账号。请先在 QoderWork CN 中登录，或切换到一个已保存的账号。"
-                    .to_string(),
-            )
-        })?;
+    let account_id = account_id.or_else(|| state_data.active.clone());
+
+    // If still no match, try to auto-create when user IS detected
+    let account_id = match account_id {
+        Some(id) => id,
+        None => {
+            if let Some(ref uid) = current_user_id {
+                // Auto-create a new account entry for the detected user
+                let new_id = state::generate_unique_id(&state_data.accounts);
+                let account_count = state_data.accounts.len();
+                let new_account = state::Account {
+                    id: new_id.clone(),
+                    phone: String::new(),
+                    label: format!("账号{}", account_count + 1),
+                    user_id: Some(uid.clone()),
+                    saved: false,
+                };
+                state_data.accounts.push(new_account);
+                state::write_state(&paths, &state_data)?;
+                log::info!("[save] Auto-created account {} for detected user {}", new_id, uid);
+                new_id
+            } else {
+                return Err(AppError::Session(
+                    "未检测到当前登录的 QoderWork CN 账号。请先在 QoderWork CN 中登录，然后再点击「保存当前」。\n\n如果您已经登录，请尝试点击右上角的「检测」按钮刷新状态。"
+                        .to_string(),
+                ));
+            }
+        }
+    };
 
     // Validate account exists
     let _account = state_data
