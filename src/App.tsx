@@ -29,6 +29,7 @@ export default function App() {
     error,
     quotas,
     quotaErrors,
+    quotasLoading,
     addAccount,
     deleteAccount,
     switchAccount,
@@ -142,6 +143,7 @@ export default function App() {
         onDelete={handleDelete}
         quotas={quotas}
         quotaErrors={quotaErrors}
+        quotasLoading={quotasLoading}
         disabled={isBusy}
       />
 

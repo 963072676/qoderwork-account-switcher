@@ -33,6 +33,7 @@ interface UseAccountsReturn {
   error: string | null;
   quotas: QuotaMap;
   quotaErrors: Record<string, string>;
+  quotasLoading: boolean;
   addAccount: (phone: string, label: string, userId?: string) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
   switchAccount: (id: string) => Promise<void>;
@@ -53,6 +54,7 @@ export function useAccounts(): UseAccountsReturn {
   const [error, setError] = useState<string | null>(null);
   const [quotas, setQuotas] = useState<QuotaMap>({});
   const [quotaErrors, setQuotaErrors] = useState<Record<string, string>>({});
+  const [quotasLoading, setQuotasLoading] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -76,6 +78,7 @@ export function useAccounts(): UseAccountsReturn {
 
   const refreshQuotas = useCallback(async () => {
     try {
+      setQuotasLoading(true);
       const result = await invoke<AllQuotasResult>("refresh_all_quotas");
       console.log("[quota] refresh_all_quotas result:", JSON.stringify(result, null, 2));
       setQuotas(result.quotas);
@@ -88,6 +91,8 @@ export function useAccounts(): UseAccountsReturn {
       }
     } catch (e) {
       console.warn("refresh_all_quotas failed:", e);
+    } finally {
+      setQuotasLoading(false);
     }
   }, []);
 
@@ -220,6 +225,7 @@ export function useAccounts(): UseAccountsReturn {
     error,
     quotas,
     quotaErrors,
+    quotasLoading,
     addAccount,
     deleteAccount,
     switchAccount,

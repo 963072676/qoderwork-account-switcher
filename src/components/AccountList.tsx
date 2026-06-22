@@ -7,6 +7,7 @@ interface AccountListProps {
   onDelete: (id: string) => void;
   quotas: QuotaMap;
   quotaErrors?: Record<string, string>;
+  quotasLoading?: boolean;
   disabled?: boolean;
 }
 
@@ -35,6 +36,7 @@ export function AccountList({
   onDelete,
   quotas,
   quotaErrors,
+  quotasLoading,
   disabled,
 }: AccountListProps) {
   if (accounts.length === 0) {
@@ -91,6 +93,26 @@ export function AccountList({
                 <p className="text-sm text-slate-400 truncate">
                   {maskPhone(account.phone)}
                 </p>
+                {quotasLoading && account.saved && !quota && !quotaErr && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <div className="w-3 h-3 rounded-full bg-slate-700 animate-pulse" />
+                      <div className="w-10 h-3 rounded bg-slate-700 animate-pulse" />
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <div className="w-3 h-3 rounded-full bg-slate-700 animate-pulse" />
+                      <div className="w-10 h-3 rounded bg-slate-700 animate-pulse" />
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <div className="w-3 h-3 rounded-full bg-slate-700 animate-pulse" />
+                      <div className="w-10 h-3 rounded bg-slate-700 animate-pulse" />
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <div className="w-3 h-3 rounded-full bg-slate-700 animate-pulse" />
+                      <div className="w-10 h-3 rounded bg-slate-700 animate-pulse" />
+                    </span>
+                  </div>
+                )}
                 {quota && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                     {/* Column 1: Daily free 3.7MAX credits */}
