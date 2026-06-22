@@ -1,9 +1,10 @@
-import { Settings, RefreshCw, User } from "lucide-react";
+import { Settings, RefreshCw, User, Bug } from "lucide-react";
 
 interface HeaderProps {
   currentUserId: string | null;
   onSettings: () => void;
   onDetect: () => void;
+  onDebug: () => void;
   loading: boolean;
 }
 
@@ -11,6 +12,7 @@ export function Header({
   currentUserId,
   onSettings,
   onDetect,
+  onDebug,
   loading,
 }: HeaderProps) {
   return (
@@ -45,6 +47,13 @@ export function Header({
             size={18}
             className={loading ? "animate-spin" : ""}
           />
+        </button>
+        <button
+          onClick={onDebug}
+          className="p-2 rounded-lg text-slate-400 hover:text-accent hover:bg-bg-tertiary transition-colors"
+          title="诊断信息"
+        >
+          <Bug size={18} />
         </button>
         <button
           onClick={onSettings}

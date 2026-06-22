@@ -29,6 +29,7 @@ pub fn run() {
             commands::switch::save_current_account,
             commands::detect::detect_current_account,
             commands::detect::detect_current_user_id,
+            commands::detect::get_debug_info,
             commands::detect::get_exe_path,
             commands::detect::set_exe_path,
             commands::detect::auto_detect_exe,

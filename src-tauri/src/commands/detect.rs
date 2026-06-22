@@ -1,6 +1,6 @@
 use crate::commands::switch::STORE_FILE;
 use crate::core::paths::{self, AppPaths};
-use crate::core::status;
+use crate::core::status::{self, StatusDebugInfo};
 use crate::error::AppResult;
 use tauri::State;
 use tauri_plugin_store::StoreExt;
@@ -83,4 +83,13 @@ pub fn auto_detect_exe(app_handle: tauri::AppHandle) -> AppResult<String> {
             Err(e)
         }
     }
+}
+
+/// Get diagnostic information about the current status file and paths.
+/// Useful for troubleshooting detection issues on other machines.
+#[tauri::command]
+pub fn get_debug_info(paths: State<'_, AppPaths>) -> AppResult<StatusDebugInfo> {
+    let info = status::get_status_debug_info(&paths);
+    log::info!("[detect] Debug info: {:?}", info);
+    Ok(info)
 }

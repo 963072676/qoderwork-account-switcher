@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { UserPlus, Save, CheckCircle } from "lucide-react";
 import { useAccounts } from "./hooks/useAccounts";
 import { Header } from "./components/Header";
@@ -6,6 +7,18 @@ import { AccountList } from "./components/AccountList";
 import { AccountForm } from "./components/AccountForm";
 import { SwitchProgress } from "./components/SwitchProgress";
 import { SettingsModal } from "./components/SettingsModal";
+
+interface DebugInfo {
+  statusFileExists: boolean;
+  statusFilePath: string;
+  loggedIn: boolean | null;
+  username: string | null;
+  avatarUrl: string | null;
+  detectedUserId: string | null;
+  appDataDir: string;
+  appDataDirExists: boolean;
+  partitionsDirExists: boolean;
+}
 
 export default function App() {
   const {
@@ -30,6 +43,16 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
   const [checkinMsg, setCheckinMsg] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+
+  const handleShowDebug = async () => {
+    try {
+      const info = await invoke<DebugInfo>("get_debug_info");
+      setDebugInfo(info);
+    } catch (e) {
+      setError("获取诊断信息失败: " + String(e));
+    }
+  };
 
   const isBusy = loading || !!progress;
 
@@ -99,6 +122,7 @@ export default function App() {
         currentUserId={currentUserId}
         onSettings={() => setShowSettings(true)}
         onDetect={detectCurrent}
+        onDebug={handleShowDebug}
         loading={loading}
       />
 
@@ -159,6 +183,71 @@ export default function App() {
 
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {debugInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-[480px] max-h-[80vh] overflow-y-auto shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-bg-tertiary sticky top-0 bg-bg-secondary">
+              <h2 className="text-base font-semibold text-slate-100">诊断信息</h2>
+              <button
+                onClick={() => setDebugInfo(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-bg-tertiary transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-sm font-mono">
+              <div>
+                <span className="text-slate-400">状态文件：</span>
+                <span className={debugInfo.statusFileExists ? "text-green-400" : "text-red-400"}>
+                  {debugInfo.statusFileExists ? "存在" : "不存在"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">路径：</span>
+                <span className="text-slate-300 break-all">{debugInfo.statusFilePath}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">已登录：</span>
+                <span className={debugInfo.loggedIn ? "text-green-400" : "text-red-400"}>
+                  {debugInfo.loggedIn === null ? "未知" : debugInfo.loggedIn ? "是" : "否"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">username：</span>
+                <span className="text-slate-300">{debugInfo.username || "无"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">avatar_url：</span>
+                <span className="text-slate-300 break-all">{debugInfo.avatarUrl || "无"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">检测到的 userId：</span>
+                <span className={debugInfo.detectedUserId ? "text-green-400" : "text-red-400"}>
+                  {debugInfo.detectedUserId || "未检测到"}
+                </span>
+              </div>
+              <hr className="border-bg-tertiary" />
+              <div>
+                <span className="text-slate-400">App Data 目录：</span>
+                <span className={debugInfo.appDataDirExists ? "text-green-400" : "text-red-400"}>
+                  {debugInfo.appDataDirExists ? "存在" : "不存在"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400">路径：</span>
+                <span className="text-slate-300 break-all">{debugInfo.appDataDir}</span>
+              </div>
+              <div>
+                <span className="text-slate-400">Partitions 目录：</span>
+                <span className={debugInfo.partitionsDirExists ? "text-green-400" : "text-red-400"}>
+                  {debugInfo.partitionsDirExists ? "存在" : "不存在"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {progress && <SwitchProgress progress={progress} />}
