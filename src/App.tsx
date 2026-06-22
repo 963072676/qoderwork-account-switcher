@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { UserPlus, Save, CheckCircle } from "lucide-react";
+import { UserPlus, Save, CheckCircle, DownloadCloud, X } from "lucide-react";
 import { useAccounts } from "./hooks/useAccounts";
+import { useUpdate } from "./hooks/useUpdate";
 import { Header } from "./components/Header";
 import { AccountList } from "./components/AccountList";
 import { AccountForm } from "./components/AccountForm";
@@ -45,6 +46,13 @@ export default function App() {
   const [checkinBusy, setCheckinBusy] = useState(false);
   const [checkinMsg, setCheckinMsg] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+
+  const {
+    updateInfo,
+    showUpdateBanner,
+    dismissUpdate,
+    openDownload,
+  } = useUpdate();
 
   const handleShowDebug = async () => {
     try {
@@ -134,6 +142,31 @@ export default function App() {
         >
           <span className="truncate">{error}</span>
           <span className="text-xs text-red-400/60 flex-shrink-0 ml-2">点击关闭</span>
+        </div>
+      )}
+
+      {showUpdateBanner && updateInfo && (
+        <div className="mx-4 mt-3 px-4 py-2.5 rounded-lg bg-cyan-900/30 border border-cyan-700/50 text-cyan-200 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <DownloadCloud size={16} className="text-cyan-400 flex-shrink-0" />
+            <span className="truncate">
+              发现新版本 <span className="font-semibold text-cyan-300">v{updateInfo.version}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            <button
+              onClick={openDownload}
+              className="px-3 py-1 rounded-md bg-cyan-600 text-white text-xs font-medium hover:bg-cyan-500 transition-colors"
+            >
+              更新
+            </button>
+            <button
+              onClick={dismissUpdate}
+              className="p-1 rounded-md text-cyan-400/60 hover:text-cyan-200 hover:bg-cyan-800/40 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       )}
 

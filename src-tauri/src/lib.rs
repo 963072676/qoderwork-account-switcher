@@ -37,6 +37,8 @@ pub fn run() {
             commands::quota_cmd::get_account_quota,
             commands::quota_cmd::refresh_all_quotas,
             commands::quota_cmd::claim_checkin_all,
+            commands::update::check_update,
+            commands::update::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
