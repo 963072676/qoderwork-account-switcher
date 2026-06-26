@@ -83,20 +83,43 @@ pub async fn switch_account(
         }
     }
 
-    // Step 2: Kill the app
+    // Step 2: Kill the app (wait_for_exit verifies all processes exited)
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 2, total_steps);
     tokio::task::spawn_blocking(|| process::kill_app())
         .await
         .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+
+    // Extra safety delay for file handle release
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Step 3: Clear current session
     emit_progress(&app_handle, "正在清除当前会话...", 3, total_steps);
     session::clear_session(&paths)?;
 
+    // Verify clear: auth-v2.dat should not exist
+    if paths.auth_v2_dat.exists() {
+        log::warn!("[switch] auth-v2.dat still exists after clear — file may be locked");
+        // Retry once after a brief delay
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        session::clear_session(&paths)?;
+        if paths.auth_v2_dat.exists() {
+            return Err(AppError::Session(
+                "无法清除会话数据，QoderWork CN 可能仍在运行。请手动关闭 QoderWork CN 后重试。".to_string(),
+            ));
+        }
+    }
+
     // Step 4: Restore target account session
     emit_progress(&app_handle, "正在恢复账号数据...", 4, total_steps);
     session::restore_auth_data(&paths, &id)?;
+
+    // Verify restore: auth-v2.dat should now exist (if the backup had it)
+    let backup_auth_v2 = profile_dir.join("auth-v2.dat");
+    if backup_auth_v2.exists() && !paths.auth_v2_dat.exists() {
+        log::warn!("[switch] auth-v2.dat was not restored — retrying");
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        session::restore_auth_data(&paths, &id)?;
+    }
 
     // Update active account in state
     let mut state_data = state::read_state(&paths)?;
@@ -189,12 +212,14 @@ pub async fn save_current_account(
         .find(|a| a.id == account_id)
         .ok_or_else(|| AppError::AccountNotFound(account_id.clone()))?;
 
-    // Step 1: Kill the app to ensure data is flushed
+    // Step 1: Kill the app to ensure data is flushed (wait_for_exit inside kill_app verifies)
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 1, total_steps);
     tokio::task::spawn_blocking(|| process::kill_app())
         .await
         .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+
+    // Extra safety delay for file handle release
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Step 2: Save session data
     emit_progress(&app_handle, "正在保存账号数据...", 2, total_steps);

@@ -15,46 +15,89 @@ const PROCESS_EXE_NAMES: &[&str] = &[
     "qodercli",
 ];
 
-/// Kill all QoderWork CN related processes using sysinfo.
+/// Kill all QoderWork CN related processes.
 ///
-/// Uses a two-pass approach:
-/// 1. First pass sends the kill signal to all matching processes.
-/// 2. Wait briefly, then do a second pass to catch any that survived.
+/// On Windows, uses `taskkill /F /T /IM` to forcefully terminate entire process trees,
+/// which is essential for Electron apps that spawn many child/renderer processes.
+/// After killing, waits up to 10 seconds verifying all processes have exited.
 pub fn kill_app() -> AppResult<()> {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let killed_first_pass = kill_matching_processes(&sys);
-
-    if killed_first_pass > 0 {
-        log::info!(
-            "First pass: sent kill signal to {} processes",
-            killed_first_pass
-        );
-        // Wait for processes to terminate (PS script waits 4s)
-        thread::sleep(Duration::from_millis(4000));
+    // Phase 1: Send kill signals
+    #[cfg(target_os = "windows")]
+    {
+        kill_app_windows();
     }
 
-    // Second pass — refresh and kill any survivors
-    sys.refresh_all();
-    let killed_second_pass = kill_matching_processes(&sys);
-
-    if killed_second_pass > 0 {
-        log::info!(
-            "Second pass: sent kill signal to {} remaining processes",
-            killed_second_pass
-        );
-        thread::sleep(Duration::from_millis(2000));
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let killed = kill_matching_processes(&sys);
+        if killed > 0 {
+            log::info!("[kill] First pass: killed {} processes", killed);
+            thread::sleep(Duration::from_millis(3000));
+        }
+        sys.refresh_all();
+        let killed2 = kill_matching_processes(&sys);
+        if killed2 > 0 {
+            log::info!("[kill] Second pass: killed {} remaining", killed2);
+            thread::sleep(Duration::from_millis(2000));
+        }
     }
 
-    let total_killed = killed_first_pass + killed_second_pass;
-    if total_killed == 0 {
-        log::info!("No QoderWork CN processes found to kill");
-    } else {
-        log::info!("Killed {} total processes", total_killed);
-    }
+    // Phase 2: Wait and verify all processes have exited
+    wait_for_exit(10);
 
     Ok(())
+}
+
+/// Windows-specific kill using taskkill /F /T /IM for each known exe name.
+/// /F = force, /T = kill entire process tree (critical for Electron apps).
+#[cfg(target_os = "windows")]
+fn kill_app_windows() {
+    let exe_names = ["QoderWork CN.exe", "qoderclicn.exe", "qodercli.exe"];
+
+    for exe_name in &exe_names {
+        match Command::new("taskkill")
+            .args(["/F", "/T", "/IM", exe_name])
+            .output()
+        {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if o.status.success() {
+                    log::info!("[kill] taskkill {} OK: {}", exe_name, stdout.trim());
+                } else {
+                    // "没有找到进程" = not running, that's fine
+                    log::info!("[kill] taskkill {}: {}", exe_name, stderr.trim());
+                }
+            }
+            Err(e) => {
+                log::warn!("[kill] taskkill {} error: {}", exe_name, e);
+            }
+        }
+    }
+
+    // Sysinfo fallback — catches any processes taskkill missed
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    let extra = kill_matching_processes(&sys);
+    if extra > 0 {
+        log::info!("[kill] sysinfo fallback killed {} additional processes", extra);
+    }
+}
+
+/// Wait up to `max_seconds` for all QoderWork CN processes to exit.
+/// Returns early if all processes have exited.
+fn wait_for_exit(max_seconds: u64) {
+    for i in 1..=max_seconds {
+        thread::sleep(Duration::from_secs(1));
+        if !is_app_running() {
+            log::info!("[kill] All processes exited after {}s", i);
+            return;
+        }
+        log::info!("[kill] Waiting for processes to exit... {}/{}s", i, max_seconds);
+    }
+    log::warn!("[kill] Timed out after {}s — some processes may still be running", max_seconds);
 }
 
 /// Check if a process matches QoderWork CN by its exe file name.
