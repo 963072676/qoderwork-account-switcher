@@ -1,16 +1,39 @@
 use crate::core::paths::AppPaths;
 use crate::core::process;
 use crate::core::session;
+use crate::core::session::file_hash_debug;
 use crate::core::state;
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{Emitter, State};
 use tauri_plugin_store::StoreExt;
 
 /// The store file name used by tauri-plugin-store.
 pub const STORE_FILE: &str = "settings.json";
+
+/// Append a timestamped line to the switch log file.
+fn slog(log_path: &Path, msg: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    {
+        let _ = writeln!(f, "[{}] {}", chrono_now(), msg);
+    }
+    log::info!("[switch] {}", msg);
+}
+
+/// Simple timestamp without external crates.
+fn chrono_now() -> String {
+    use std::time::SystemTime;
+    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(d) => format!("T+{}s", d.as_secs()),
+        Err(_) => "T+?".to_string(),
+    }
+}
 
 /// Progress event payload emitted during switch/save operations.
 #[derive(Serialize, Clone, Debug)]
@@ -33,6 +56,21 @@ pub async fn switch_account(
     id: String,
 ) -> AppResult<()> {
     let total_steps: u32 = 5;
+
+    // Set up file logging for this switch operation
+    let log_path = paths.profiles_dir.join("switch.log");
+    // Clear previous log
+    let _ = std::fs::write(&log_path, "");
+
+    slog(&log_path, &format!("=== Switch to {} STARTED ===", id));
+    slog(&log_path, &format!(
+        "Pre-switch auth-v2.dat hash: {}",
+        file_hash_debug(&paths.auth_v2_dat)
+    ));
+    slog(&log_path, &format!(
+        "Pre-switch auth.dat hash: {}",
+        file_hash_debug(&paths.auth_dat)
+    ));
 
     // Validate account exists and has saved data
     let state_data = state::read_state(&paths)?;
@@ -57,68 +95,138 @@ pub async fn switch_account(
         )));
     }
 
+    slog(&log_path, &format!(
+        "Target backup auth-v2.dat hash: {}",
+        file_hash_debug(&profile_dir.join("auth-v2.dat"))
+    ));
+    slog(&log_path, &format!(
+        "Target backup auth.dat hash: {}",
+        file_hash_debug(&profile_dir.join("auth.dat"))
+    ));
+
     // Step 1: Auto-save current account before switching (prevent data loss)
     emit_progress(&app_handle, "正在保存当前账号...", 1, total_steps);
     if let Some(current_uid) = crate::core::status::get_current_user_id(&paths) {
+        slog(&log_path, &format!("Current userId from .status.json: {}", current_uid));
         // Find the currently active account
         if let Some(current_account) = state_data.accounts.iter().find(|a| a.user_id.as_deref() == Some(&current_uid)) {
             if current_account.id != id {
-                log::info!("[switch] Auto-saving current account {} before switching", current_account.id);
+                slog(&log_path, &format!("Auto-saving current account: {}", current_account.id));
                 match session::save_auth_data(&paths, &current_account.id) {
                     Ok(_) => {
+                        slog(&log_path, &format!(
+                            "Auto-save OK. Saved auth-v2.dat hash: {}",
+                            file_hash_debug(&paths.profile_dir(&current_account.id).join("auth-v2.dat"))
+                        ));
                         // Mark as saved
                         let mut state_copy = state::read_state(&paths)?;
                         if let Some(acc) = state_copy.accounts.iter_mut().find(|a| a.id == current_account.id) {
                             acc.saved = true;
                         }
                         state::write_state(&paths, &state_copy)?;
-                        log::info!("[switch] Successfully saved current account {}", current_account.id);
                     }
                     Err(e) => {
-                        log::warn!("[switch] Failed to auto-save current account {}: {}", current_account.id, e);
-                        // Don't block the switch — just warn
+                        slog(&log_path, &format!("Auto-save FAILED: {}", e));
                     }
                 }
+            } else {
+                slog(&log_path, "Current account is same as target, skipping auto-save");
             }
+        } else {
+            slog(&log_path, "No matching account found for current userId, skipping auto-save");
         }
+    } else {
+        slog(&log_path, "Could not detect current userId from .status.json");
     }
 
-    // Step 2: Kill the app (wait_for_exit verifies all processes exited)
+    // Step 2: Kill the app
     emit_progress(&app_handle, "正在关闭 QoderWork CN...", 2, total_steps);
+    slog(&log_path, "Killing QoderWork CN...");
     tokio::task::spawn_blocking(|| process::kill_app())
         .await
         .map_err(|e| AppError::Process(format!("Kill task panicked: {}", e)))??;
+
+    slog(&log_path, &format!(
+        "Post-kill: is_app_running={}",
+        process::is_app_running()
+    ));
 
     // Extra safety delay for file handle release
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Step 3: Clear current session
     emit_progress(&app_handle, "正在清除当前会话...", 3, total_steps);
+    slog(&log_path, &format!(
+        "Pre-clear auth-v2.dat hash: {}",
+        file_hash_debug(&paths.auth_v2_dat)
+    ));
     session::clear_session(&paths)?;
 
-    // Verify clear: auth-v2.dat should not exist
+    // Verify clear
+    slog(&log_path, &format!(
+        "Post-clear auth-v2.dat exists: {}",
+        paths.auth_v2_dat.exists()
+    ));
+    slog(&log_path, &format!(
+        "Post-clear auth.dat exists: {}",
+        paths.auth_dat.exists()
+    ));
+    // Check root dirs
+    for dir_name in &["Network", "Local Storage", "Cache"] {
+        let dir = paths.app_data_dir.join(dir_name);
+        slog(&log_path, &format!(
+            "Post-clear root/{}/ exists: {}",
+            dir_name,
+            dir.exists()
+        ));
+    }
+
     if paths.auth_v2_dat.exists() {
-        log::warn!("[switch] auth-v2.dat still exists after clear — file may be locked");
-        // Retry once after a brief delay
+        slog(&log_path, "auth-v2.dat STILL EXISTS after clear — retrying...");
         tokio::time::sleep(Duration::from_millis(1000)).await;
         session::clear_session(&paths)?;
         if paths.auth_v2_dat.exists() {
+            slog(&log_path, "FATAL: auth-v2.dat still exists after retry");
             return Err(AppError::Session(
                 "无法清除会话数据，QoderWork CN 可能仍在运行。请手动关闭 QoderWork CN 后重试。".to_string(),
             ));
         }
     }
+    slog(&log_path, "Clear verified: auth-v2.dat removed");
+    slog(&log_path, &format!(
+        "Post-clear .status.json exists: {}",
+        paths.status_file.exists()
+    ));
 
     // Step 4: Restore target account session
     emit_progress(&app_handle, "正在恢复账号数据...", 4, total_steps);
+    slog(&log_path, &format!("Restoring session for account: {}", id));
     session::restore_auth_data(&paths, &id)?;
 
-    // Verify restore: auth-v2.dat should now exist (if the backup had it)
+    // Verify restore
     let backup_auth_v2 = profile_dir.join("auth-v2.dat");
-    if backup_auth_v2.exists() && !paths.auth_v2_dat.exists() {
-        log::warn!("[switch] auth-v2.dat was not restored — retrying");
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-        session::restore_auth_data(&paths, &id)?;
+    if backup_auth_v2.exists() {
+        if !paths.auth_v2_dat.exists() {
+            slog(&log_path, "auth-v2.dat NOT restored — retrying...");
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            session::restore_auth_data(&paths, &id)?;
+        }
+        let backup_hash = file_hash_debug(&backup_auth_v2);
+        let restored_hash = file_hash_debug(&paths.auth_v2_dat);
+        slog(&log_path, &format!(
+            "Post-restore auth-v2.dat: backup={}, restored={}, match={}",
+            backup_hash,
+            restored_hash,
+            backup_hash == restored_hash
+        ));
+
+        let backup_auth_dat = profile_dir.join("auth.dat");
+        slog(&log_path, &format!(
+            "Post-restore auth.dat: backup={}, restored={}, match={}",
+            file_hash_debug(&backup_auth_dat),
+            file_hash_debug(&paths.auth_dat),
+            file_hash_debug(&backup_auth_dat) == file_hash_debug(&paths.auth_dat)
+        ));
     }
 
     // Update active account in state
@@ -129,17 +237,44 @@ pub async fn switch_account(
     // Step 5: Relaunch the app
     emit_progress(&app_handle, "正在启动 QoderWork CN...", 5, total_steps);
     let exe_path = get_exe_path(&app_handle)?;
+    slog(&log_path, &format!("Launching app: {:?}", exe_path));
     process::launch_app(&exe_path)?;
 
-    // Verify the app actually started
-    tokio::time::sleep(Duration::from_millis(2000)).await;
-    if !process::is_app_running() {
+    // Verify the app actually started and got the right user
+    tokio::time::sleep(Duration::from_millis(5000)).await;
+    let running = process::is_app_running();
+    slog(&log_path, &format!("Post-launch: is_app_running={}", running));
+    slog(&log_path, &format!(
+        "Post-launch auth-v2.dat hash: {} (backup was: {})",
+        file_hash_debug(&paths.auth_v2_dat),
+        file_hash_debug(&backup_auth_v2)
+    ));
+
+    // Check .status.json to verify the app authenticated as the correct user
+    let expected_uid = account.user_id.as_deref().unwrap_or("(unknown)");
+    match crate::core::status::get_current_user_id(&paths) {
+        Some(actual_uid) => {
+            slog(&log_path, &format!(
+                "Post-launch userId: {} (expected: {}), match={}",
+                actual_uid, expected_uid, actual_uid == expected_uid
+            ));
+            if actual_uid != expected_uid {
+                slog(&log_path, "WARNING: userId mismatch! Auth files may be stale or expired.");
+                slog(&log_path, "Please log into this account in QoderWork CN and click 'Save Current' to refresh the backup.");
+            }
+        }
+        None => {
+            slog(&log_path, "Post-launch: .status.json not yet written (app may still be authenticating)");
+        }
+    }
+    slog(&log_path, "=== Switch COMPLETE ===");
+
+    if !running {
         return Err(AppError::Process(
             "QoderWork CN 启动失败，请手动打开应用并重试。".to_string(),
         ));
     }
 
-    log::info!("Successfully switched to account {}", id);
     Ok(())
 }
 

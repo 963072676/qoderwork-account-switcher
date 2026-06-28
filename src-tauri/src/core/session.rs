@@ -12,6 +12,45 @@ const PARTITIONS_SUBDIRS: &[&str] = &[
     "Shared Dictionary",
 ];
 
+/// Root-level session directories in the AppData dir that must be saved/restored.
+/// These belong to Electron's default session and contain cookies, local storage, etc.
+/// that can override the partition-level session data if left behind.
+const ROOT_SESSION_DIRS: &[&str] = &[
+    "Network",
+    "Local Storage",
+    "Shared Dictionary",
+];
+
+/// Root-level cache directories that should be cleared but NOT saved/restored.
+/// These contain cached data that is regenerated on demand and may contain
+/// stale auth-related caches that interfere with account switching.
+const ROOT_CACHE_DIRS: &[&str] = &[
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+];
+
+/// Root-level session files that must be cleared/restored.
+const ROOT_SESSION_FILES: &[&str] = &[
+    "SharedStorage",
+    "SharedStorage-wal",
+];
+
+/// Compute MD5 hash of a file for diagnostic logging.
+pub(crate) fn file_hash_debug(path: &Path) -> String {
+    use md5::Digest;
+    match fs::read(path) {
+        Ok(data) => {
+            let mut hasher = md5::Md5::new();
+            md5::Digest::update(&mut hasher, &data);
+            format!("{:x}", md5::Digest::finalize(hasher))
+        }
+        Err(_) => "(unreadable)".to_string(),
+    }
+}
+
 /// Save the current session data for the given account.
 ///
 /// This backs up:
@@ -101,7 +140,50 @@ pub fn save_auth_data(paths: &AppPaths, account_id: &str) -> AppResult<()> {
         }
     }
 
-    log::info!("Saved session data for account {}", account_id);
+    // Save root-level session directories (Electron default session data)
+    for dir_name in ROOT_SESSION_DIRS {
+        let src = paths.app_data_dir.join(dir_name);
+        let dst = profile_dir.join(dir_name);
+
+        if src.exists() && src.is_dir() {
+            if dst.exists() {
+                fs::remove_dir_all(&dst).map_err(|e| {
+                    AppError::Session(format!(
+                        "Failed to remove old root session dir {:?}: {}",
+                        dst, e
+                    ))
+                })?;
+            }
+            copy_dir_recursive(&src, &dst)?;
+            log::info!("[save] Saved root session dir: {}", dir_name);
+        }
+    }
+
+    // Save root-level session files
+    for file_name in ROOT_SESSION_FILES {
+        let src = paths.app_data_dir.join(file_name);
+        let dst = profile_dir.join(file_name);
+
+        if src.exists() {
+            if dst.exists() {
+                let bak = dst.with_extension("bak");
+                let _ = fs::copy(&dst, &bak);
+            }
+            fs::copy(&src, &dst).map_err(|e| {
+                AppError::Session(format!(
+                    "Failed to save root session file {:?} -> {:?}: {}",
+                    src, dst, e
+                ))
+            })?;
+            log::info!("[save] Saved root session file: {}", file_name);
+        }
+    }
+
+    log::info!(
+        "Saved session data for account {} (auth-v2.dat hash: {})",
+        account_id,
+        file_hash_debug(&paths.auth_v2_dat)
+    );
     Ok(())
 }
 
@@ -136,77 +218,31 @@ pub fn restore_auth_data(paths: &AppPaths, account_id: &str) -> AppResult<()> {
     restore_file(&profile_dir.join("id"), &paths.auth_dir.join("id"))?;
     restore_file(&profile_dir.join("user"), &paths.auth_dir.join("user"))?;
 
-    // Restore Partitions subdirectories
-    let saved_partitions = profile_dir.join("Partitions").join("main");
-    if saved_partitions.exists() {
-        // Ensure target partitions dir exists
-        fs::create_dir_all(&paths.partitions_main).map_err(|e| {
-            AppError::Session(format!(
-                "Failed to create partitions dir {:?}: {}",
-                paths.partitions_main, e
-            ))
-        })?;
+    // Intentionally do NOT restore Partitions subdirectories, RUM store,
+    // root-level session dirs, or root-level session files.
+    // Backups may contain stale session data (e.g., Local Storage LevelDB
+    // from a different account). The app re-authenticates from auth-v2.dat
+    // and rebuilds fresh session state on launch.
 
-        for subdir_name in PARTITIONS_SUBDIRS {
-            let src = saved_partitions.join(subdir_name);
-            let dst = paths.partitions_main.join(subdir_name);
+    log::info!(
+        "Restored auth files for account {} (auth-v2.dat hash: {})",
+        account_id,
+        file_hash_debug(&paths.auth_v2_dat)
+    );
 
-            if src.exists() && src.is_dir() {
-                // Clear target before restoring
-                if dst.exists() {
-                    fs::remove_dir_all(&dst).map_err(|e| {
-                        AppError::Session(format!(
-                            "Failed to clear partition dir {:?}: {}",
-                            dst, e
-                        ))
-                    })?;
-                }
-                copy_dir_recursive(&src, &dst)?;
-            }
-        }
-    }
-
-    // Restore RUM store
-    let saved_rum = profile_dir.join("rum-electron-store");
-    if saved_rum.exists() {
-        if paths.rum_store.exists() {
-            if paths.rum_store.is_dir() {
-                fs::remove_dir_all(&paths.rum_store).map_err(|e| {
-                    AppError::Session(format!(
-                        "Failed to clear RUM store {:?}: {}",
-                        paths.rum_store, e
-                    ))
-                })?;
-            } else {
-                fs::remove_file(&paths.rum_store).map_err(|e| {
-                    AppError::Session(format!(
-                        "Failed to clear RUM store file {:?}: {}",
-                        paths.rum_store, e
-                    ))
-                })?;
-            }
-        }
-
-        if saved_rum.is_dir() {
-            copy_dir_recursive(&saved_rum, &paths.rum_store)?;
-        } else {
-            fs::copy(&saved_rum, &paths.rum_store).map_err(|e| {
-                AppError::Session(format!(
-                    "Failed to restore RUM store {:?} -> {:?}: {}",
-                    saved_rum, paths.rum_store, e
-                ))
-            })?;
-        }
-    }
-
-    log::info!("Restored session data for account {}", account_id);
     Ok(())
 }
 
 /// Clear all session data from the application data directory.
 ///
-/// Removes auth files and clears partition directories and RUM store.
+/// Removes auth files, clears partition directories, root-level session
+/// directories (Electron default session), and RUM store.
 pub fn clear_session(paths: &AppPaths) -> AppResult<()> {
+    log::info!(
+        "[clear] Pre-clear auth-v2.dat hash: {}",
+        file_hash_debug(&paths.auth_v2_dat)
+    );
+
     // Remove individual auth files
     remove_file_if_exists(&paths.auth_dat)?;
     remove_file_if_exists(&paths.auth_v2_dat)?;
@@ -241,6 +277,53 @@ pub fn clear_session(paths: &AppPaths) -> AppResult<()> {
             })?;
         }
     }
+
+    // Clear root-level session directories (Electron default session — cookies, local storage, etc.)
+    for dir_name in ROOT_SESSION_DIRS {
+        let dir = paths.app_data_dir.join(dir_name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).map_err(|e| {
+                AppError::Session(format!(
+                    "Failed to clear root session dir {:?}: {}",
+                    dir, e
+                ))
+            })?;
+            log::info!("[clear] Cleared root session dir: {}", dir_name);
+        }
+    }
+
+    // Clear root-level session files
+    for file_name in ROOT_SESSION_FILES {
+        let file = paths.app_data_dir.join(file_name);
+        if file.exists() {
+            let _ = fs::remove_file(&file);
+            log::info!("[clear] Cleared root session file: {}", file_name);
+        }
+    }
+
+    // Clear root-level cache directories (may contain stale auth caches)
+    for dir_name in ROOT_CACHE_DIRS {
+        let dir = paths.app_data_dir.join(dir_name);
+        if dir.exists() {
+            let _ = fs::remove_dir_all(&dir);
+            log::info!("[clear] Cleared root cache dir: {}", dir_name);
+        }
+    }
+
+    // Clear cache directories inside Partitions/main
+    let partition_cache_dirs = &["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache"];
+    for dir_name in partition_cache_dirs {
+        let dir = paths.partitions_main.join(dir_name);
+        if dir.exists() {
+            let _ = fs::remove_dir_all(&dir);
+            log::info!("[clear] Cleared partition cache dir: {}", dir_name);
+        }
+    }
+
+    // Clear .status.json (cached user identity — app falls back to this if
+    // auth-v2.dat decryption or server validation fails)
+    remove_file_if_exists(&paths.status_file)?;
+    log::info!("[clear] Cleared .status.json");
 
     log::info!("Cleared all session data");
     Ok(())
