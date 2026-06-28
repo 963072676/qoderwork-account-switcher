@@ -91,6 +91,48 @@ pub fn add_account(
     Ok(account)
 }
 
+/// Reorder accounts to match the provided ordered_ids list.
+#[tauri::command]
+pub fn reorder_accounts(paths: State<'_, AppPaths>, ordered_ids: Vec<String>) -> AppResult<()> {
+    let mut state = state::read_state(&paths)?;
+
+    // Validate: same length
+    if ordered_ids.len() != state.accounts.len() {
+        return Err(AppError::StateFile(format!(
+            "ordered_ids length {} does not match accounts length {}",
+            ordered_ids.len(),
+            state.accounts.len()
+        )));
+    }
+
+    // Validate: same set of IDs
+    let existing_ids: std::collections::HashSet<&str> =
+        state.accounts.iter().map(|a| a.id.as_str()).collect();
+    let new_ids: std::collections::HashSet<&str> =
+        ordered_ids.iter().map(|s| s.as_str()).collect();
+    if existing_ids != new_ids {
+        return Err(AppError::StateFile(
+            "ordered_ids does not contain the same account IDs".to_string(),
+        ));
+    }
+
+    // Reorder: build a map for O(1) lookup, then reconstruct in order
+    let mut map: std::collections::HashMap<String, state::Account> = state
+        .accounts
+        .into_iter()
+        .map(|a| (a.id.clone(), a))
+        .collect();
+
+    state.accounts = ordered_ids
+        .into_iter()
+        .filter_map(|id| map.remove(&id))
+        .collect();
+
+    state::write_state(&paths, &state)?;
+    log::info!("Reordered {} accounts", state.accounts.len());
+    Ok(())
+}
+
 /// Delete an account and remove its saved profile data.
 #[tauri::command]
 pub fn delete_account(paths: State<'_, AppPaths>, id: String) -> AppResult<()> {

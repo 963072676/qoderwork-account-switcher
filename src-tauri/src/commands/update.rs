@@ -107,6 +107,12 @@ pub async fn check_update() -> AppResult<UpdateInfo> {
     })
 }
 
+/// Return the current application version from Cargo.toml.
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// Open a URL in the system default browser.
 #[tauri::command]
 pub fn open_url(url: String) -> AppResult<()> {

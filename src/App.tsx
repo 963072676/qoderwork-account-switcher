@@ -37,6 +37,7 @@ export default function App() {
     saveAccount,
     detectCurrent,
     claimCheckinAll,
+    reorderAccounts,
     setError,
     clearError,
   } = useAccounts();
@@ -52,6 +53,10 @@ export default function App() {
     showUpdateBanner,
     dismissUpdate,
     openDownload,
+    checkForUpdate,
+    updateChecking,
+    currentVersion,
+    upToDateMessage,
   } = useUpdate();
 
   const handleShowDebug = async () => {
@@ -129,10 +134,15 @@ export default function App() {
     <div className="flex flex-col h-screen bg-bg-primary">
       <Header
         currentUserId={currentUserId}
+        currentPhone={accounts.find((a) => a.is_current)?.phone ?? null}
         onSettings={() => setShowSettings(true)}
         onDetect={detectCurrent}
         onDebug={handleShowDebug}
         loading={loading}
+        version={currentVersion}
+        onCheckUpdate={checkForUpdate}
+        updateChecking={updateChecking}
+        upToDateMessage={upToDateMessage}
       />
 
       {error && (
@@ -174,6 +184,7 @@ export default function App() {
         accounts={accounts}
         onSwitch={handleSwitch}
         onDelete={handleDelete}
+        onReorder={reorderAccounts}
         quotas={quotas}
         quotaErrors={quotaErrors}
         quotasLoading={quotasLoading}

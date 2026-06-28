@@ -25,6 +25,7 @@ pub fn run() {
             commands::accounts::list_accounts,
             commands::accounts::add_account,
             commands::accounts::delete_account,
+            commands::accounts::reorder_accounts,
             commands::switch::switch_account,
             commands::switch::save_current_account,
             commands::detect::detect_current_account,
@@ -38,6 +39,7 @@ pub fn run() {
             commands::quota_cmd::refresh_all_quotas,
             commands::quota_cmd::claim_checkin_all,
             commands::update::check_update,
+            commands::update::get_app_version,
             commands::update::open_url,
         ])
         .run(tauri::generate_context!())

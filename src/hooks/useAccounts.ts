@@ -41,6 +41,7 @@ interface UseAccountsReturn {
   detectCurrent: () => Promise<void>;
   refreshQuotas: () => Promise<void>;
   claimCheckinAll: () => Promise<ClaimAllResult>;
+  reorderAccounts: (orderedIds: string[]) => Promise<void>;
   setError: (msg: string | null) => void;
   clearError: () => void;
   clearProgress: () => void;
@@ -214,6 +215,20 @@ export function useAccounts(): UseAccountsReturn {
     }
   }, [refreshQuotas]);
 
+  const reorderAccounts = useCallback(
+    async (orderedIds: string[]) => {
+      try {
+        setError(null);
+        await invoke("reorder_accounts", { orderedIds });
+        await fetchAccounts();
+      } catch (e) {
+        setError(parseError(e));
+        throw e;
+      }
+    },
+    [fetchAccounts],
+  );
+
   const clearError = useCallback(() => setError(null), []);
   const clearProgress = useCallback(() => setProgress(null), []);
 
@@ -233,6 +248,7 @@ export function useAccounts(): UseAccountsReturn {
     detectCurrent,
     refreshQuotas,
     claimCheckinAll,
+    reorderAccounts,
     setError,
     clearError,
     clearProgress,
